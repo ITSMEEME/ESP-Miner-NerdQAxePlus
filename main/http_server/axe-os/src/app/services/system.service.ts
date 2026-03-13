@@ -117,6 +117,7 @@ const defaultInfo: ISystemInfo = {
     hashrate_1d: [],
     vregTemp: [],
     asicTemp: [],
+    fanSpeed: [],
     hasMore: false,
     timestamps: [],
     timestampBase: 0

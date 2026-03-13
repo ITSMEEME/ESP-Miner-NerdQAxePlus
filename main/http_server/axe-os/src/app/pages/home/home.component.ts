@@ -27,12 +27,15 @@ import {
 })
 export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   @ViewChild("myChart") ctx: ElementRef<HTMLCanvasElement>;
+  @ViewChild("heatChart") ctxHeat: ElementRef<HTMLCanvasElement>;
 
   protected readonly NbTrigger = NbTrigger;
 
   private chart: Chart;
+  private heatChart: Chart;
   private themeSubscription: any;
   private chartInitialized = false;
+  private heatChartInitialized = false;
   private _info: any;
   private timeFormatListener: any;
 
@@ -45,6 +48,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   public expectedHashRate$: Observable<number | undefined>;
 
   public chartOptions: any;
+  public heatChartOptions: any;
   public dataLabel: number[] = [];
   public dataData: number[] = [];
   public dataData1m: number[] = [];
@@ -53,7 +57,9 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   public dataData1d: number[] = [];
   public dataVregTemp: number[] = [];
   public dataAsicTemp: number[] = [];
+  public dataFanSpeed: number[] = []
   public chartData?: any;
+  public heatChartData?: any;
 
   public historyDrainRunning = false;
   private historyDrainSub?: Subscription;
@@ -62,6 +68,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   public viewMode: 'gauge' | 'bars' = 'bars'; // default to bars
 
   private localStorageKey = 'chartData';
+  private localStorageKeyHeat = 'chartDataHeat';
   private timestampKey = 'lastTimestamp'; // Key to store lastTimestamp
   private tempViewKey = 'tempViewMode';
   private legendVisibilityKey = 'chartLegendVisibility';
@@ -73,6 +80,10 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     if (!this.chartInitialized && this.ctx && this.ctx.nativeElement) {
       this.chartInitialized = true; // Prevent re-initialization
       this.initChart();
+    }
+    if (!this.heatChartInitialized && this.ctxHeat && this.ctxHeat.nativeElement) {
+      this.heatChartInitialized = true; // Prevent re-initialization
+      this.initHeatChart();
     }
   }
 
@@ -100,6 +111,15 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     } else {
       this.importHistoricalData(this._info.history);
     }
+  }
+
+  private initHeatChart(): void {
+    this.heatChart = new Chart(this.ctxHeat.nativeElement.getContext('2d')!, {
+      type: 'line',
+      data: this.heatChartData,
+      options: this.heatChartOptions,
+    });
+    this.heatChart.update();
   }
 
   constructor(
@@ -169,7 +189,13 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
           tension: .4,
           pointRadius: 0,
           borderWidth: 1
-        },
+        }
+      ]
+    };
+
+    this.heatChartData = {
+      labels: [],
+      datasets: [
         {
           type: 'line',
           label: this.translateService.instant('PERFORMANCE.VR_TEMP'),
@@ -188,6 +214,17 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
           yAxisID: 'y_temp',
           borderColor: '#f06292',
           backgroundColor: '#f06292',
+          tension: .4,
+          pointRadius: 0,
+          borderWidth: 1
+        },
+        {
+          type: 'line',
+          label: this.translateService.instant('HOME.FAN_SPEED'),
+          data: this.dataFanSpeed,
+          yAxisID: 'y_percent', // Share Y axis or separate? Let's use separate or same if scale similar (20-80C vs 0-100%)
+          borderColor: '#00bcd4',
+          backgroundColor: '#00bcd4',
           tension: .4,
           pointRadius: 0,
           borderWidth: 1
@@ -261,21 +298,82 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
             drawBorder: false
           }
         },
-        y_temp: {
-          position: "right",
-          min: 20,
-          max: 80,
-          ticks: {
-            color: textColorSecondary,
-            callback: (value: number) => `${value.toFixed(2)} °C`
-          },
-          grid: {
-            color: '#80808080',//surfaceBorder,
-            drawBorder: false
-          }
-        }
       }
     };
+
+    this.heatChartOptions = {
+        animation: false,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: {
+              color: textColor
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title: (context: any) => {
+                const date = new Date(context[0].parsed.x);
+                const format = this.localStorage.getItem('timeFormat') === '12h';
+                return format
+                  ? date.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, month: 'short', day: 'numeric' })
+                  : date.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, month: 'short', day: 'numeric' });
+              },
+              label: (x: any) => {
+                  let suffix = '';
+                  if (x.dataset.yAxisID === 'y_percent') suffix = ' %';
+                  else if (x.dataset.yAxisID === 'y_temp') suffix = ' °C';
+                  return `${x.dataset.label}: ${x.raw.toFixed(1)}${suffix}`;
+              }
+            }
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'hour',
+              displayFormats: {
+                hour: this.localStorage.getItem('timeFormat') === '12h' ? 'h:mm A' : 'HH:mm'
+              }
+            },
+            ticks: {
+              color: textColorSecondary
+            },
+            grid: {
+              color: '#80808080',//surfaceBorder,
+              drawBorder: false,
+              display: true
+            }
+          },
+          y_temp: {
+            position: "left",
+            min: 20,
+            max: 80,
+            ticks: {
+              color: textColorSecondary,
+              callback: (value: number) => `${value.toFixed(0)} °C`
+            },
+            grid: {
+              color: '#80808080',
+              drawBorder: false
+            }
+          },
+          y_percent: {
+            position: "right",
+            min: 0,
+            max: 100,
+            ticks: {
+                color: textColorSecondary,
+                callback: (value: number) => `${value.toFixed(0)} %`
+            },
+            grid: {
+                display: false,
+                drawBorder: false
+            }
+          }
+        }
+      };
 
     this.info$ = interval(5000).pipe(
       startWith(0), // Immediately start the interval observable
@@ -478,6 +576,9 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       if (this.chart) {
         this.chart.update();
       }
+      if (this.heatChart) {
+        this.heatChart.update();
+      }
     }
   }
 
@@ -511,6 +612,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.dataData1d = [];
     this.dataVregTemp = [];
     this.dataAsicTemp = [];
+    this.dataFanSpeed = [];
   }
 
   private updateChartData(data: any): void {
@@ -522,6 +624,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     const convertedhashrate_1d = data.hashrate_1d.map((hr: number) => hr * 1000000000.0 / 100.0);
     const convertedVregTemp = data.vregTemp.map((temp: number) => temp / 100.0);
     const convertedAsicTemp = data.asicTemp.map((temp: number) => temp / 100.0);
+    const convertedFanSpeed = data.fanSpeed ? data.fanSpeed.map((speed: number) => speed / 100.0) : data.timestamps.map(() => 0);
 
     // Find the highest existing timestamp
     const lastTimestamp = this.dataLabel.length > 0 ? Math.max(...this.dataLabel) : -Infinity;
@@ -535,6 +638,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       hashrate_1d: convertedhashrate_1d[index],
       vregTemp: convertedVregTemp[index],
       asicTemp: convertedAsicTemp[index],
+      fanSpeed: convertedFanSpeed[index],
     })).filter(entry => entry.timestamp > lastTimestamp);
 
     // Append only new data
@@ -546,6 +650,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       this.dataData1d = [...this.dataData1d, ...newData.map(entry => entry.hashrate_1d)];
       this.dataVregTemp = [...this.dataVregTemp, ...newData.map(entry => entry.vregTemp)];
       this.dataAsicTemp = [...this.dataAsicTemp, ...newData.map(entry => entry.asicTemp)];
+      this.dataFanSpeed = [...this.dataFanSpeed, ...newData.map(entry => entry.fanSpeed)];
     }
   }
 
@@ -560,6 +665,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       this.dataData1d = parsedData.dataData1d || [];
       this.dataVregTemp = parsedData.dataVregTemp || [];
       this.dataAsicTemp = parsedData.dataAsicTemp || [];
+      this.dataFanSpeed = parsedData.dataFanSpeed || [];
     }
 
     // do a simple consistency check
@@ -583,6 +689,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       dataData1d: this.dataData1d,
       dataVregTemp: this.dataVregTemp,
       dataAsicTemp: this.dataAsicTemp,
+      dataFanSpeed: this.dataFanSpeed,
     };
     localStorage.setItem(this.localStorageKey, JSON.stringify(dataToSave));
   }
@@ -599,6 +706,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       this.dataData1d.shift();
       this.dataVregTemp.shift();
       this.dataAsicTemp.shift();
+      this.dataFanSpeed.shift();
     }
 
     if (this.dataLabel.length) {
@@ -623,13 +731,15 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   }
 
   private updateChart() {
-    this.chartData.labels = this.dataLabel;
     this.chartData.datasets[0].data = this.dataData1m;
     this.chartData.datasets[1].data = this.dataData10m;
     this.chartData.datasets[2].data = this.dataData1h;
     this.chartData.datasets[3].data = this.dataData1d;
-    this.chartData.datasets[4].data = this.dataVregTemp;
-    this.chartData.datasets[5].data = this.dataAsicTemp;
+
+    this.heatChartData.labels = this.dataLabel;
+    this.heatChartData.datasets[0].data = this.dataVregTemp;
+    this.heatChartData.datasets[1].data = this.dataAsicTemp;
+    this.heatChartData.datasets[2].data = this.dataFanSpeed;
 
     if (!this.chart) {
       return;
@@ -637,8 +747,12 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
 
     // Force dataset updates
     this.chart.data.datasets.forEach(dataset => dataset.data = [...dataset.data]);
-
     this.chart.update();
+
+    if (this.heatChart) {
+      this.heatChart.data.datasets.forEach(dataset => dataset.data = [...dataset.data]);
+      this.heatChart.update();
+    }
   }
 
   private updateThemeColors(): void {
@@ -654,10 +768,21 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.chartOptions.scales.y_temp.ticks.color = textColor;
     this.chartOptions.scales.y_temp.grid.color = '#80808080';
 
+    this.heatChartOptions.plugins.legend.labels.color = textColor;
+    this.heatChartOptions.scales.x.ticks.color = textColor;
+    this.heatChartOptions.scales.x.grid.color = '#80808080';
+    this.heatChartOptions.scales.y_percent.ticks.color = textColor;
+    this.heatChartOptions.scales.y_temp.ticks.color = textColor;
+    this.heatChartOptions.scales.y_temp.grid.color = '#80808080';
+
     // Update and redraw the chart
     if (this.chart) {
       this.chart.options = this.chartOptions;
       this.chart.update();
+    }
+    if (this.heatChart) {
+      this.heatChart.options = this.heatChartOptions;
+      this.heatChart.update();
     }
   }
 

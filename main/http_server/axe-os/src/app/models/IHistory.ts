@@ -7,6 +7,7 @@ export interface IHistory {
     hashrate_1d: number[],
     vregTemp: number[],
     asicTemp: number[],
+    fanSpeed: number[],
     hasMore: boolean,
     timestamps: number[],
     timestampBase: number

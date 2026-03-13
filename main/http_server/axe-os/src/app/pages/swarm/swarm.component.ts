@@ -30,7 +30,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
   public refreshIntervalTime = 30;
   public refreshTimeSet = 30;
 
-  public totals: { hashRate: number, power: number, bestDiff: number } = { hashRate: 0, power: 0, bestDiff: 0 };
+  public totals: { hashRate: number, power: number, bestDiff: number, efficiency: number } = { hashRate: 0, power: 0, bestDiff: 0, efficiency: 0 };
 
   public isRefreshing = false;
 
@@ -86,7 +86,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
           this.startRefreshInterval();
         },
         error: () => {
-          this.startRefreshInterval(); // Start periodic refresh even if info request fails
+          this.startRefreshInterval();
         }
       });
   }
@@ -123,7 +123,6 @@ export class SwarmComponent implements OnInit, OnDestroy {
     return { start: network + 1, end: broadcast - 1 };
   }
 
-  // check if  /asic returns the expected fields
   private isValidAsicPayload(asic: any): boolean {
     return !!asic
       && typeof asic === 'object'
@@ -140,17 +139,20 @@ export class SwarmComponent implements OnInit, OnDestroy {
 
     from(ips).pipe(
       mergeMap(ipAddr =>
-        // get /info and /asic in parallel
         forkJoin({
           info: this.httpClient.get<any>(`http://${ipAddr}/api/system/info`).pipe(timeout(5000)),
           asic: this.httpClient.get<any>(`http://${ipAddr}/api/system/asic`).pipe(
             timeout(5000),
-            catchError(() => of(null)) // /asic can be missing (302 etc.)
+            catchError(() => of(null))
           )
         }).pipe(
           map(({ info, asic }) => {
             if (info && 'hashRate' in info) {
               const supportsAsicApi = this.isValidAsicPayload(asic);
+              const smallCoreCount = asic?.smallCoreCount ?? info.smallCoreCount ?? 0;
+              const asicCount = asic?.asicCount ?? info.asicCount ?? 1;
+              const expectedHashRate = smallCoreCount ? Math.floor((info.frequency || 0) * ((smallCoreCount * asicCount) / 1000)) : 0;
+
               const merged = {
                 IP: ipAddr,
                 ...info,
@@ -161,6 +163,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
                   swarmColor: asic.swarmColor ?? 'blue',
                 } : {}),
                 supportsAsicApi,
+                expectedHashRate
               };
 
               merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
@@ -208,6 +211,10 @@ export class SwarmComponent implements OnInit, OnDestroy {
       )
     }).subscribe(({ info, asic }) => {
       if (info?.ASICModel) {
+        const smallCoreCount = asic?.smallCoreCount ?? info.smallCoreCount ?? 0;
+        const asicCount = asic?.asicCount ?? info.asicCount ?? 1;
+        const expectedHashRate = smallCoreCount ? Math.floor((info.frequency || 0) * ((smallCoreCount * asicCount) / 1000)) : 0;
+
         const supportsAsicApi = this.isValidAsicPayload(asic);
         const merged = {
           IP: newIp,
@@ -219,6 +226,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
             swarmColor: asic.swarmColor ?? 'blue'
           } : {}),
           supportsAsicApi,
+          expectedHashRate
         };
         if (!merged['swarmColor']) merged['swarmColor'] = 'blue';
 
@@ -237,7 +245,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
   public edit(axe: any) {
     if (!axe?.supportsAsicApi) {
       this.toastrService.warning(
-        'To edit settings from the Swarm page, please update this device’s firmware.',
+        'To edit settings from the Swarm page, please update this device\'s firmware.',
         'Firmware Update Needed'
       );
       return;
@@ -287,6 +295,10 @@ export class SwarmComponent implements OnInit, OnDestroy {
           map(({ info, asic }) => {
             const existingDevice = this.swarm.find(axeOs => axeOs.IP === ipAddr);
             const supportsAsicApi = this.isValidAsicPayload(asic) || !!existingDevice?.supportsAsicApi;
+            const smallCoreCount = asic?.smallCoreCount ?? info?.smallCoreCount ?? existingDevice?.smallCoreCount ?? 0;
+            const asicCount = asic?.asicCount ?? info?.asicCount ?? existingDevice?.asicCount ?? 1;
+            const expectedHashRate = smallCoreCount ? Math.floor((info?.frequency || existingDevice?.frequency || 0) * ((smallCoreCount * asicCount) / 1000)) : 0;
+
             const merged = {
               IP: ipAddr,
               ...existingDevice,
@@ -298,6 +310,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
                 swarmColor: asic.swarmColor ?? info?.swarmColor ?? existingDevice?.swarmColor
               } : {}),
               supportsAsicApi,
+              expectedHashRate
             };
             if (!merged['swarmColor']) merged['swarmColor'] = existingDevice?.swarmColor ?? 'blue';
             merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
@@ -346,7 +359,6 @@ export class SwarmComponent implements OnInit, OnDestroy {
     return this.ipToInt(a.IP) - this.ipToInt(b.IP);
   }
 
-
   private convertBestDiffToNumber(bestDiff: string | number): number {
     if (typeof bestDiff === 'number') {
       return bestDiff;
@@ -373,6 +385,11 @@ export class SwarmComponent implements OnInit, OnDestroy {
       .filter(v => !isNaN(v) && isFinite(v));
 
     this.totals.bestDiff = numericDiffs.length > 0 ? Math.max(...numericDiffs) : 0;
+
+    const totalHashRateTH = this.totals.hashRate / 1000; // GH/s → TH/s
+    this.totals.efficiency = totalHashRateTH > 0
+      ? this.totals.power / totalHashRateTH
+      : 0;
   }
 
   hasModel(model: string): string {
@@ -383,12 +400,10 @@ export class SwarmComponent implements OnInit, OnDestroy {
     return this.swarm.some(axe => axe.asicCount > 1) ? '1' : '0.5';
   }
 
-  // Swarm color for the template
   public getSwarmColor(axe: any): string {
     return axe?.swarmColor || 'blue';
   }
 
-  // build legend
   private rebuildColorLegend(): void {
     const mapLegend = new Map<string, { count: number; names: Set<string> }>();
     for (const axe of this.swarm) {
@@ -427,31 +442,78 @@ export class SwarmComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  public getActivePoolHashrate(axe, i: 0 | 1) {
+  public getActivePoolHashrate(axe: any, i: 0 | 1): number {
     const balance = this.getActiveBalance(axe, i);
     return axe.hashRate * balance * 10000000;
   }
 
-  public getActiveBalance(axe, i: 0 | 1) {
+  public getActiveBalance(axe: any, i: 0 | 1): number {
     const stratum = axe.stratum;
-    const connected = stratum.pools.map(p => p.connected);
+    const connected = stratum.pools.map((p: any) => p.connected);
     const balance = stratum.poolBalance;
 
-    // If neither pool is connected
     if (!connected[0] && !connected[1]) {
       return 0;
     }
-
-    // If both pools are connected
     if (connected[0] && connected[1]) {
       return i === 0 ? balance : 100 - balance;
     }
-
-    // Only one pool is connected → return 100 for that pool, 0 for the other
     return connected[i] ? 100 : 0;
   }
 
-  public isPoolConnected(axe, i: 0 | 1) {
+  public isPoolConnected(axe: any, i: 0 | 1): boolean {
     return axe.stratum.pools[i].connected;
+  }
+
+  public getEfficiency(axe: any): number {
+    const hashRateTH = (axe.hashRate || 0) / 1000; // GH/s → TH/s
+    if (hashRateTH <= 0) return 0;
+    return (axe.power || 0) / hashRateTH;
+  }
+
+  public getHashRateValue(hashRateGH: number): number {
+    if (!hashRateGH) return 0;
+    if (hashRateGH >= 1000) return hashRateGH / 1000;
+    return hashRateGH;
+  }
+
+  public getHashRateUnit(hashRateGH: number): string {
+    if (!hashRateGH) return 'GH/s';
+    if (hashRateGH >= 1000) return 'TH/s';
+    return 'GH/s';
+  }
+
+  public getVoltageValue(v: number): number {
+    if (!v) return 0;
+    return v > 100 ? v / 1000 : v;
+  }
+
+  public getHashRateProgress(axe: any): number {
+    const expected = axe.expectedHashRate || 0;
+    if (expected <= 0) return 90; // Default to the expected marker line's position
+    const pct = (axe.hashRate / expected) * 100;
+    
+    let displayPct: number;
+    if (pct <= 100) {
+      // 2x sensitivity: 100% performance is 90% width on screen.
+      // Every 1% drop in performance drops 2% on screen.
+      displayPct = 90 - ((100 - pct) * 2);
+    } else {
+      // Overshoot room: 100% performance -> 90% width. 110% performance -> 100% width.
+      displayPct = 90 + (pct - 100);
+    }
+    
+    if (displayPct < 0) displayPct = 0;
+    if (displayPct > 100) displayPct = 100;
+    return displayPct;
+  }
+
+  public getHashRateStatus(axe: any): string {
+    const expected = axe.expectedHashRate || 0;
+    if (expected <= 0) return 'success';
+    const pct = (axe.hashRate / expected) * 100;
+    if (pct >= 95) return 'success';
+    if (pct >= 80) return 'warning';
+    return 'danger';
   }
 }

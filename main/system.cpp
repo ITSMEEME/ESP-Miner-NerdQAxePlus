@@ -208,6 +208,7 @@ void System::pushHistory() {
     float hashrate = HASHRATE_MONITOR.getHashrate();
     float vregTemp = POWER_MANAGEMENT_MODULE.getVRTemp();
     float asicTemp = POWER_MANAGEMENT_MODULE.getChipTempMax();
+    float fanSpeed = POWER_MANAGEMENT_MODULE.getFanPerc();
 
     if (!filteredVreg || !filteredAsicTemp) {
         filteredVreg = vregTemp;
@@ -217,7 +218,7 @@ void System::pushHistory() {
         filteredAsicTemp = asicTemp * alpha + (1.0f - alpha) * filteredAsicTemp;
     }
 
-    m_history->push(hashrate, filteredVreg, filteredAsicTemp, timestamp);
+    m_history->push(hashrate, filteredVreg, filteredAsicTemp, fanSpeed, timestamp);
 }
 
 void System::task() {

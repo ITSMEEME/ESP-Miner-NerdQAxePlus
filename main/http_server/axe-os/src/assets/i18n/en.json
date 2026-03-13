@@ -37,6 +37,7 @@
     "HASH_RATE": "Hash Rate",
     "HASH_RATE_TOOLTIP": "Hash rate reported by the ASICs.",
     "HASH_RATE_CHART": "Nerd* Chart",
+    "HEAT_CHART": "Heat Chart",
     "HASHRATE_ESTIMATED": "Hash rate estimated by found shares.",
     "SHARES": "Shares",
     "POWER": "Power",
@@ -230,7 +231,9 @@
     "POOL_DIFF": "Pool Diff",
     "VERSION": "Version",
     "EMPTY_LIST": "Empty List",
-    "IP_ADDRESS": "IP"
+    "IP_ADDRESS": "IP",
+    "EFFICIENCY": "Efficiency",
+    "TOTAL_EFFICIENCY": "Total Efficiency"
   },
   "INFLUXDB": {
     "TITLE": "InfluxDB Configuration",

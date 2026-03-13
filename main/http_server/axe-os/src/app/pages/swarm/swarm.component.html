@@ -4,14 +4,11 @@
     <nb-card-body>
       <form [formGroup]="form">
         <div class="d-flex align-items-center gap-3">
-          <!-- Label container -->
           <label class="manual-add-label">{{ 'UPDATE.MANUAL_ADDITION' | translate }}</label>
-          <!-- Input group container -->
           <div class="input-group" style="flex: 1; display: flex; flex-flow: nowrap;">
             <input nbInput id="manualAddIp" formControlName="manualAddIp" type="text"
               [placeholder]="'UPDATE.ENTER_IP_ADDRESS' | translate" style="flex: 1; width: 100%;" />
-            <button nbButton status="primary" (click)="add()" [disabled]="form.invalid">{{ 'UPDATE.ADD' | translate
-              }}</button>
+            <button nbButton status="primary" (click)="add()" [disabled]="form.invalid">{{ 'UPDATE.ADD' | translate }}</button>
           </div>
         </div>
       </form>
@@ -19,27 +16,21 @@
   </nb-card>
 
   <form [formGroup]="form">
-    <!-- Outer container allows wrapping -->
     <div class="buttons-slider-area">
-      <!-- Left group: Buttons -->
       <div class="scan-refresh-buttons">
         <button nbButton status="primary" (click)="scanNetwork()" [disabled]="scanning">
           {{ scanning ? ('UPDATE.SCANNING' | translate) : ('UPDATE.AUTOMATIC_SCAN' | translate) }}
         </button>
         <button nbButton status="info" (click)="refreshList()" [disabled]="scanning || isRefreshing">
-          {{ isRefreshing ? ('UPDATE.REFRESHING' | translate) : (('UPDATE.REFRESH_LIST' | translate) + ' (' +
-          refreshIntervalTime + ')') }}
+          {{ isRefreshing ? ('UPDATE.REFRESHING' | translate) : (('UPDATE.REFRESH_LIST' | translate) + ' (' + refreshIntervalTime + ')') }}
         </button>
       </div>
-
-      <!-- Right group: Label and Slider -->
       <div class="mt-3 mt-md-0 time-slider">
         <label for="refresh-interval">{{ 'UPDATE.REFRESH_INTERVAL' | translate }}:</label>
         <div class="progress-wrap mx-2">
           <input id="refresh-interval" type="range" class="progress" [formControl]="refreshIntervalControl" [min]="5"
             [max]="30" step="1" />
-          <div class="progress-foreground" [style.width.%]="((refreshIntervalControl.value - 5) / 25) * 100">
-          </div>
+          <div class="progress-foreground" [style.width.%]="((refreshIntervalControl.value - 5) / 25) * 100"></div>
         </div>
         <span>{{ refreshTimeSet }}s</span>
       </div>
@@ -58,6 +49,12 @@
       <nb-card-body>
         <span class="text-start">{{ 'SWARM.TOTAL_POWER' | translate }}</span>
         <span class="text-primary fw-bold">{{ totals.power | number:'1.1-1' }} W</span>
+      </nb-card-body>
+    </nb-card>
+    <nb-card class="text-center mb-0" style="flex: 1;">
+      <nb-card-body>
+        <span class="text-start">{{ 'SWARM.TOTAL_EFFICIENCY' | translate }}</span>
+        <span class="text-primary fw-bold">{{ totals.efficiency | number:'1.1-1' }} J/TH</span>
       </nb-card-body>
     </nb-card>
     <nb-card class="text-center mb-0" style="flex: 1;">
@@ -82,9 +79,14 @@
             <th>{{ 'SWARM.UPTIME' | translate }}</th>
             <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.SHARES' | translate }}</th>
             <th>{{ 'SWARM.POWER' | translate }}</th>
-            <th>{{ 'SWARM.TEMP' | translate }}</th>
-            <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.POOL_DIFF' | translate }}</th>
-            <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.BEST_DIFF' | translate }}</th>
+            <th>{{ 'SWARM.EFFICIENCY' | translate }}</th>
+            <th>ASIC °C</th>
+            <th>VR °C</th>
+            <th>ASIC Freq</th>
+            <th>In Vol.</th>
+            <th>ASIC Vol.</th>
+            <th [colSpan]="dp ? 2 : 1" class="th-condensed">{{ 'SWARM.POOL_DIFF' | translate }}</th>
+            <th [colSpan]="dp ? 2 : 1" class="th-condensed">{{ 'SWARM.BEST_DIFF' | translate }}</th>
             <th>{{ 'SWARM.VERSION' | translate }}</th>
             <th>&nbsp;</th>
             <th>&nbsp;</th>
@@ -99,6 +101,11 @@
             <td>Pool 2</td>
             <td></td>
             <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
             <td>Pool 1</td>
             <td>Pool 2</td>
             <td>Pool 1</td>
@@ -108,7 +115,6 @@
             <td>&nbsp;</td>
             <td>&nbsp;</td>
           </tr>
-
         </thead>
         <tbody>
           <ng-container *ngFor="let axe of swarm">
@@ -117,7 +123,6 @@
             @let p1 = axe.stratum?.pools[1];
             <tr class="base-row">
               <!-- IP with swarmColor dot -->
-
               <td [rowSpan]="dualPool ? 2 : 1">
                 <a [href]="'http://' + axe.IP" target="_blank">
                   <span class="swarm-dot" [style.background]="axe.swarmColor || 'blue'"></span>
@@ -127,7 +132,27 @@
               </td>
 
               <!-- Hash Rate -->
-              <td [colSpan]="dp ? 2 : 1">{{ axe.hashRate * 1000000000 | hashSuffix }}</td>
+              <td [colSpan]="dp ? 2 : 1">
+                <div class="font-weight-bold">{{ axe.hashRate | number:'1.0-2' }} <small>GH/s</small></div>
+                <div style="position: relative; margin-top: 12px;" class="mb-1">
+                  <!-- Expected Hashrate Marker Overlay -->
+                  <div *ngIf="axe.expectedHashRate > 0"
+                       style="position: absolute; left: 90%; bottom: 0; height: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1;">
+                    <span style="font-size: 11px; color: var(--text-primary-color); line-height: 1; margin-bottom: -1px;">▼</span>
+                    <div style="width: 2px; height: 6px; background-color: var(--text-primary-color); opacity: 0.5;"></div>
+                  </div>
+                  <div class="hr-bar-track m-0">
+                    <div class="hr-bar-fill"
+                         [ngClass]="'bg-' + getHashRateStatus(axe)"
+                         [style.width.%]="getHashRateProgress(axe)">
+                    </div>
+                  </div>
+                </div>
+                <div style="white-space: nowrap;">
+                  <span class="text-success">{{ (axe.expectedHashRate || 0) | number:'1.0-2' }} <small>GH/s</small></span>
+                  <small class="text-hint"> expected</small>
+                </div>
+              </td>
 
               <!-- Uptime -->
               <td [rowSpan]="dualPool ? 2 : 1">{{ axe.uptimeSeconds | dateAgo: {intervals: 2} }}</td>
@@ -143,28 +168,64 @@
               </td>
 
               <!-- Power -->
-              <td [rowSpan]="dualPool ? 2 : 1">{{ axe.power | number:'1.1-1' }} <small>W</small></td>
-
-              <!-- Temperature (with VR temp if available) -->
-              <td [rowSpan]="dualPool ? 2 : 1">
-                <div [ngClass]="{'text-orange-500': axe.temp > 68}">
-                  {{ axe.temp | number:'1.0-1' }}°<small>C</small>
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="axe.power" [min]="axe.minPower || 0" [max]="axe.maxPower || (axe.power * 1.5) || 20" [unit]="'W'" format="1.0-1" class="small-gauge mb-1"></app-gauge>
                 </div>
-                <div *ngIf="axe.vrTemp" [nbTooltip]="'UPDATE.VOLTAGE_REGULATOR_TEMPERATURE' | translate"
-                  tooltipPosition="top" [ngClass]="{'text-orange-500': axe.vrTemp > 90}" class="text-sm">
-                  {{ axe.vrTemp | number:'1.0-1' }}°<small>C</small>
+              </td>
+
+              <!-- Efficiency J/TH -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="getEfficiency(axe)" [min]="0" [max]="30" [warn]="14.0" [crit]="18.0" okColor="#198754" warnColor="#f59e0b" critColor="#b02a37" [unit]="'J/TH'" format="1.1-1" class="small-gauge mb-1"></app-gauge>
+                </div>
+              </td>
+
+              <!-- ASIC Temperature -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="axe.temp" [min]="20" [max]="axe.overheat_temp || 85" [warn]="(axe.overheat_temp || 85) - 5" [crit]="(axe.overheat_temp || 85) - 2" [unit]="'°C'" format="1.0-0" class="small-gauge mb-1"></app-gauge>
+                </div>
+              </td>
+
+              <!-- VR Temperature -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge *ngIf="axe.vrTemp" [value]="axe.vrTemp" [min]="20" [max]="145" [warn]="90" [crit]="120" [unit]="'°C'" format="1.0-0" class="small-gauge mb-1"></app-gauge>
+                  <span *ngIf="!axe.vrTemp" class="text-hint">n/a</span>
+                </div>
+              </td>
+
+              <!-- ASIC Frequency -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="axe.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'" class="small-gauge mb-1"></app-gauge>
+                </div>
+              </td>
+
+              <!-- Input Voltage -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="getVoltageValue(axe.voltage)" format="1.1-1" [min]="getVoltageValue(axe.minVoltage)" [max]="getVoltageValue(axe.maxVoltage)" [unit]="'V'" class="small-gauge mb-1"></app-gauge>
+                </div>
+              </td>
+
+              <!-- ASIC Voltage -->
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+                <div class="d-flex flex-column align-items-center justify-content-center">
+                  <app-gauge [value]="getVoltageValue(axe.coreVoltage)" [min]="0.9" [max]="1.8" [unit]="'V'" format="1.3-3" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- Stratum Pool Diff -->
-              <td [colSpan]="dp ? 2 : 1">{{ axe.poolDifficulty | number:'1.0-0' }}</td>
+              <td [colSpan]="dp ? 2 : 1" class="text-condensed">{{ axe.poolDifficulty | number:'1.0-0' }}</td>
 
               <!-- Best Diff with Best Session Diff tooltip -->
-              <td [colSpan]="dp ? 2 : 1">
+              <td [colSpan]="dp ? 2 : 1" class="text-condensed">
                 <div>{{ axe.bestDiff | humanReadable }}</div>
                 <div *ngIf="!dualPool" [nbTooltip]="'UPDATE.BEST_SESSION_DIFF' | translate" tooltipPosition="top"
                   class="text-sm">
-                  {{ axe.bestSessionDiff | humanReadable}}
+                  {{ axe.bestSessionDiff | humanReadable }}
                 </div>
                 <div *ngIf="dualPool" class="text-sm">&nbsp;</div>
               </td>
@@ -213,7 +274,6 @@
               <td class="shrink {{ e0 }}">{{ (c0 ? p0.bestDiff : 0) | humanReadable }}</td>
               <td class="shrink {{ e1 }}">{{ (c1 ? p1.bestDiff : 0) | humanReadable }}</td>
             </tr>
-
           </ng-container>
         </tbody>
       </table>

@@ -6,6 +6,7 @@ import { SwarmComponent } from './swarm.component';
 import { EditModule } from '../edit/edit.module';
 import { PipesModule} from '../../pipes/pipes.module';
 import { I18nModule } from '../../@i18n/i18n.module';
+import { GaugeModule } from '../../components/gauge/gauge.module';
 
 @NgModule({
   declarations: [
@@ -23,7 +24,8 @@ import { I18nModule } from '../../@i18n/i18n.module';
     NbTooltipModule,
     EditModule,
     PipesModule,
-    I18nModule
+    I18nModule,
+    GaugeModule
   ],
   exports: [
     SwarmComponent

@@ -97,6 +97,11 @@ float History::getAsicTempSample(int index)
     return m_asicTemps[WRAP(index)];
 }
 
+float History::getFanSpeedSample(int index)
+{
+    return m_fanSpeeds[WRAP(index)];
+}
+
 double History::getCurrentHashrate1m()
 {
     return m_avg1m.getGhDisplay();
@@ -160,6 +165,7 @@ bool History::init(int num_asics)
     m_hashrate1d = (float *) CALLOC(HISTORY_MAX_SAMPLES, sizeof(float));
     m_vregTemps = (float *) CALLOC(HISTORY_MAX_SAMPLES, sizeof(float));
     m_asicTemps = (float *) CALLOC(HISTORY_MAX_SAMPLES, sizeof(float));
+    m_fanSpeeds = (float *) CALLOC(HISTORY_MAX_SAMPLES, sizeof(float));
 
     ESP_LOGI(TAG, "History size %d samples", (int) HISTORY_MAX_SAMPLES);
 
@@ -248,7 +254,7 @@ void HistoryAvg::update()
     m_timestamp = lastTs;
 }
 // push a measured instantaneous hashrate (GH/s)
-void History::push(float rateGh, float vregTemp, float asicTemp, uint64_t timestamp)
+void History::push(float rateGh, float vregTemp, float asicTemp, float fanSpeed, uint64_t timestamp)
 {
     if (!isAvailable()) {
         ESP_LOGW(TAG, "PSRAM not initialized");
@@ -265,6 +271,7 @@ void History::push(float rateGh, float vregTemp, float asicTemp, uint64_t timest
     m_rates[WRAP(m_numSamples)] = (uint32_t) (rateGh * 1024.0); // -> Q22.10
     m_vregTemps[WRAP(m_numSamples)] = vregTemp;
     m_asicTemps[WRAP(m_numSamples)] = asicTemp;
+    m_fanSpeeds[WRAP(m_numSamples)] = fanSpeed;
     m_timestamps[WRAP(m_numSamples)] = timestamp;
     m_numSamples++;
 
@@ -375,6 +382,7 @@ void History::exportHistoryData(JsonObject &json_history, uint64_t start_timesta
     JsonArray timestamps = json_history["timestamps"].to<JsonArray>();
     JsonArray vregTemps = json_history["vregTemp"].to<JsonArray>();
     JsonArray asicTemps = json_history["asicTemp"].to<JsonArray>();
+    JsonArray fanSpeeds = json_history["fanSpeed"].to<JsonArray>();
 
     int64_t lastTimestamp = 0;
     int limit = 100;
@@ -396,6 +404,7 @@ void History::exportHistoryData(JsonObject &json_history, uint64_t start_timesta
         hashrate_1d.add((int) (getHashrate1dSample(i) * 100.0f));
         vregTemps.add((int) (getVregTempSample(i) * 100.0f));
         asicTemps.add((int) (getAsicTempSample(i) * 100.0f));
+        fanSpeeds.add((int) (getFanSpeedSample(i) * 100.0f));
         timestamps.add((int64_t) sample_timestamp - sys_start);
         limit--;
         lastTimestamp = sample_timestamp;
