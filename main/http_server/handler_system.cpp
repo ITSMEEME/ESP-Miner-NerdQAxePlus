@@ -38,9 +38,14 @@ esp_err_t GET_system_info(httpd_req_t *req)
     }
 
     // Parse optional start_timestamp parameter
+    const uint64_t DEFAULT_HISTORY_SPAN_MS = 3600ULL * 1000ULL;
+    const uint64_t MAX_HISTORY_SPAN_MS = 3ULL * 3600ULL * 1000ULL;
+
     uint64_t start_timestamp = 0;
     uint64_t current_timestamp = 0;
+    uint32_t history_limit = 0;
     bool history_requested = false;
+    uint64_t history_span_ms = DEFAULT_HISTORY_SPAN_MS;
     char query_str[128];
     if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK) {
         char param[64];
@@ -48,6 +53,21 @@ esp_err_t GET_system_info(httpd_req_t *req)
             start_timestamp = strtoull(param, NULL, 10);
             if (start_timestamp) {
                 history_requested = true;
+            }
+        }
+        if (httpd_query_key_value(query_str, "limit", param, sizeof(param)) == ESP_OK) {
+            history_limit = strtoul(param, NULL, 10);
+            if (history_limit > 1000) {
+                history_limit = 1000;
+            }
+        }
+        if (httpd_query_key_value(query_str, "history_span", param, sizeof(param)) == ESP_OK) {
+            history_span_ms = strtoull(param, NULL, 10);
+            if (history_span_ms > MAX_HISTORY_SPAN_MS) {
+                history_span_ms = MAX_HISTORY_SPAN_MS;
+            }
+            if (history_span_ms == 0) {
+                history_span_ms = DEFAULT_HISTORY_SPAN_MS;
             }
         }
         if (httpd_query_key_value(query_str, "cur", param, sizeof(param)) == ESP_OK) {
@@ -92,6 +112,7 @@ esp_err_t GET_system_info(httpd_req_t *req)
     doc["maxCurrentA"]        = board->getMaxCurrentA(); // A
     doc["temp"]               = POWER_MANAGEMENT_MODULE.getChipTempMax();
     doc["vrTemp"]             = POWER_MANAGEMENT_MODULE.getVRTemp();
+    doc["vrTempInt"]          = POWER_MANAGEMENT_MODULE.getVRTempInt();
     doc["hashRateTimestamp"]  = history->getCurrentTimestamp();
     // set hashrate values to 0 in shutdown
     doc["hashRate"]           = !shutdown ? SYSTEM_MODULE.getCurrentHashrate() : 0.0;
@@ -105,6 +126,8 @@ esp_err_t GET_system_info(httpd_req_t *req)
     doc["fanspeed"]           = POWER_MANAGEMENT_MODULE.getFanPerc();
     doc["manualFanSpeed"]     = Config::getFanSpeed();
     doc["fanrpm"]             = POWER_MANAGEMENT_MODULE.getFanRPM(0);
+    doc["fanrpm2"]            = (board->getNumFans() > 1) ? POWER_MANAGEMENT_MODULE.getFanRPM(1) : 0;
+    doc["fanCount"]           = board->getNumFans();
     doc["lastpingrtt"]        = get_last_ping_rtt();
     doc["recentpingloss"]     = get_recent_ping_loss();
     doc["shutdown"]           = POWER_MANAGEMENT_MODULE.isShutdown();
@@ -133,11 +156,12 @@ esp_err_t GET_system_info(httpd_req_t *req)
 
     // If history was requested, add the history data as a nested object
     if (!shutdown && history_requested) {
-        uint64_t end_timestamp = start_timestamp + 3600 * 1000ULL; // 1 hour later
+        uint64_t span = history_span_ms;
+        uint64_t end_timestamp = start_timestamp + span;
         JsonObject json_history = doc["history"].to<JsonObject>();
 
         History *history = SYSTEM_MODULE.getHistory();
-        history->exportHistoryData(json_history, start_timestamp, end_timestamp, current_timestamp);
+        history->exportHistoryData(json_history, start_timestamp, end_timestamp, current_timestamp, history_limit);
     }
 
     // settings

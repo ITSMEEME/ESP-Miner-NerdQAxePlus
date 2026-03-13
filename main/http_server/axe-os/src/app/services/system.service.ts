@@ -1,4 +1,4 @@
-import { HttpClient, HttpEvent } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { delay, Observable, of } from 'rxjs';
 import { eASICModel } from '../models/enum/eASICModel';
@@ -24,6 +24,7 @@ const defaultInfo: ISystemInfo = {
   maxCurrentA: 6.0,
   temp: 60,
   vrTemp: 45,
+  vrTempInt: 45,
   hashRateTimestamp: 1724398272483,
   hashRate: 475,
   hashRate_10m: 475,
@@ -70,6 +71,8 @@ const defaultInfo: ISystemInfo = {
   fanspeed: 100,
   manualFanSpeed: 100,
   fanrpm: 0,
+  fanrpm2: 0,
+  fanCount: 1,
   autoscreenoff: 0,
   lastResetReason: "Unknown",
   jobInterval: 1200,
@@ -150,8 +153,40 @@ export class SystemService {
     return defaultInfo;
   }
 
-  public getInfo(ts: number, uri: string = ''): Observable<ISystemInfo> {
-    return this.httpClient.get(`${uri}/api/system/info?ts=${ts}&cur=${Math.floor(Date.now())}`) as Observable<ISystemInfo>;
+  public getInfo(ts = 0, limit = 0, uri = ''): Observable<ISystemInfo> {
+    let params = new HttpParams();
+
+    if (ts > 0) {
+      params = params
+        .set('ts', ts)
+        .set('cur', Date.now());
+
+      if (limit > 0) {
+        params = params.set('limit', limit);
+      }
+    }
+    const endpoint = `${uri}/api/system/info`;
+    return this.httpClient.get<ISystemInfo>(endpoint, { params });
+  }
+
+  // Home dashboard: request an extended history window (span) without affecting other callers.
+  public getInfoWithSpan(ts = 0, limit = 0, spanMs = 0, uri = ''): Observable<ISystemInfo> {
+    let params = new HttpParams();
+
+    if (ts > 0) {
+      params = params
+        .set('ts', ts)
+        .set('cur', Date.now());
+
+      if (limit > 0) {
+        params = params.set('limit', limit);
+      }
+      if (spanMs > 0) {
+        params = params.set('history_span', spanMs);
+      }
+    }
+    const endpoint = `${uri}/api/system/info`;
+    return this.httpClient.get<ISystemInfo>(endpoint, { params });
   }
 
   public getAsicInfo(uri: string = ''): Observable<AsicInfo> {
@@ -324,4 +359,3 @@ export class SystemService {
     return this.httpClient.get('/api/otp/status') as Observable<{ enabled: boolean }>;
   }
 }
-
