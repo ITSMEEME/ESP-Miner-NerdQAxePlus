@@ -17,14 +17,6 @@ export interface HomeWarmupCfg {
   restartDetectStreak: number;
 }
 
-export interface RestartMarkerInputs {
-  liveOkNow: boolean;
-  vregRaw?: number;
-  asicRaw?: number;
-  historyHr1m?: number;
-  tempMinValidC: number;
-}
-
 export interface WarmupLiveInputs {
   nowMs: number;
   vregTempC?: number | null;
@@ -35,26 +27,6 @@ export interface WarmupLiveInputs {
   systemOk?: boolean | null;
   /** True if live hashrate reached the startup unlock ratio vs expected (used for 1m warmup gate). */
   unlockOk?: boolean | null;
-}
-
-export interface StartupUnlockInputs {
-  liveHs: number;
-  expectedHs: number;
-  expectedUnlockRatio: number;
-  liveIsStable: boolean;
-}
-
-export function shouldUnlockStartup(input: StartupUnlockInputs): boolean {
-  const live = Number(input.liveHs);
-  if (!Number.isFinite(live) || live <= 0) return false;
-
-  const expected = Number(input.expectedHs);
-  const ratio = Number(input.expectedUnlockRatio);
-  const expectedOk = Number.isFinite(expected) && expected > 0;
-  const unlockByExpected = expectedOk && live >= expected * ratio;
-  const unlockByStableLive = !expectedOk && !!input.liveIsStable;
-
-  return unlockByExpected || unlockByStableLive;
 }
 
 function isFiniteNumber(v: any): v is number {
@@ -83,7 +55,6 @@ export class HomeWarmupMachine {
   // Series enable flags (used by component to gate data pushes)
   private vregEnabled = true;
   private asicEnabled = true;
-  private fanSpeedEnabled = true;
   private hr1mEnabled = true;
   private otherHashEnabled = true;
 
@@ -103,7 +74,6 @@ export class HomeWarmupMachine {
 
     this.vregEnabled = false;
     this.asicEnabled = false;
-    this.fanSpeedEnabled = false;
     this.hr1mEnabled = false;
     this.otherHashEnabled = false;
     this.hr1mFlow = false;
@@ -170,7 +140,6 @@ export class HomeWarmupMachine {
       case 'ASIC_DELAY': {
         if (nowMs - this.stageSinceMs >= Math.max(0, this.cfg.asicDelayMs)) {
           this.asicEnabled = true;
-          this.fanSpeedEnabled = true;
           this.stage = 'WAIT_HASH_LIVE';
           this.stageSinceMs = nowMs;
         }
@@ -235,9 +204,6 @@ export class HomeWarmupMachine {
   isAsicEnabled(): boolean {
     return this.asicEnabled;
   }
-  isFanSpeedEnabled(): boolean {
-    return this.fanSpeedEnabled;
-  }
   isHr1mEnabled(): boolean {
     return this.hr1mEnabled;
   }
@@ -249,16 +215,4 @@ export class HomeWarmupMachine {
   isLocked(): boolean {
     return this.stage === 'LOCKED' || this.stage === 'VREG_DELAY';
   }
-}
-
-/**
- * Detect restart markers based on live hashrate and temp sanity.
- * Returns true if a hard-cut should be inserted.
- */
-export function shouldInsertRestartCut(input: RestartMarkerInputs): boolean {
-  const { liveOkNow, vregRaw, asicRaw, historyHr1m, tempMinValidC } = input;
-  const vregLow = !isFiniteNumber(vregRaw) || (isFiniteNumber(vregRaw) && vregRaw <= tempMinValidC);
-  const asicLow = !isFiniteNumber(asicRaw) || (isFiniteNumber(asicRaw) && asicRaw <= tempMinValidC);
-  const hrLow = isFiniteNumber(historyHr1m) && historyHr1m <= 0;
-  return (!liveOkNow) && (vregLow || asicLow || hrLow);
 }

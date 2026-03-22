@@ -18,7 +18,6 @@ export interface PersistedHomeChartStateV1 {
   dataData1d: number[];
   dataVregTemp?: number[];
   dataAsicTemp?: number[];
-  dataFanSpeed?: number[];
 }
 
 
@@ -44,7 +43,6 @@ export interface ApiHistoryChunk {
   hashrate_1d?: unknown;
   vregTemp?: unknown;
   asicTemp?: unknown;
-  fanSpeed?: unknown;
 }
 
 function isNumberArray(v: any): v is number[] {
@@ -73,7 +71,6 @@ export class HomeChartState {
   hr1d: number[] = [];
   vregTemp: number[] = [];
   asicTemp: number[] = [];
-  fanSpeed: number[] = [];
 
   clear(): void {
     this.labels = [];
@@ -83,7 +80,6 @@ export class HomeChartState {
     this.hr1d = [];
     this.vregTemp = [];
     this.asicTemp = [];
-    this.fanSpeed = [];
   }
 
   /**
@@ -100,7 +96,6 @@ export class HomeChartState {
       this.hr1d.length,
       this.vregTemp.length,
       this.asicTemp.length,
-      this.fanSpeed.length,
     ];
 
     const allEqual = lens.every((l) => l === lens[0]);
@@ -120,7 +115,6 @@ export class HomeChartState {
     this.hr1d = normalizeToLen(this.hr1d, lenLabels);
     this.vregTemp = normalizeToLen(this.vregTemp, lenLabels);
     this.asicTemp = normalizeToLen(this.asicTemp, lenLabels);
-    this.fanSpeed = normalizeToLen(this.fanSpeed, lenLabels);
     return true;
   }
 
@@ -140,7 +134,6 @@ private trimToCutoff(cutoffMs: number): void {
   this.hr1d = this.hr1d.slice(idx);
   this.vregTemp = this.vregTemp.slice(idx);
   this.asicTemp = this.asicTemp.slice(idx);
-  this.fanSpeed = this.fanSpeed.slice(idx);
 
 }
 
@@ -169,7 +162,6 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
       dataData1d: this.hr1d,
       dataVregTemp: this.vregTemp,
       dataAsicTemp: this.asicTemp,
-      dataFanSpeed: this.fanSpeed,
     };
   }
 
@@ -193,7 +185,6 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
     const targetLen = labels.length;
     const vreg = Array.isArray(parsed?.dataVregTemp) ? parsed.dataVregTemp.map(Number) : null;
     const asic = Array.isArray(parsed?.dataAsicTemp) ? parsed.dataAsicTemp.map(Number) : null;
-    const fan = Array.isArray(parsed?.dataFanSpeed) ? parsed.dataFanSpeed.map(Number) : null;
 
     const s = new HomeChartState();
     s.labels = labels;
@@ -203,7 +194,6 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
     s.hr1d = normalizeToLen(d1d, targetLen);
     s.vregTemp = normalizeToLen(vreg, targetLen);
     s.asicTemp = normalizeToLen(asic, targetLen);
-    s.fanSpeed = normalizeToLen(fan, targetLen);
     s.validateLengthsOrReset();
     return s;
   }
@@ -224,9 +214,8 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
     const h1d = Array.isArray(chunk?.hashrate_1d) ? (chunk.hashrate_1d as any[]).map(Number) : [];
     const vreg = Array.isArray(chunk?.vregTemp) ? (chunk.vregTemp as any[]).map(Number) : [];
     const asic = Array.isArray(chunk?.asicTemp) ? (chunk.asicTemp as any[]).map(Number) : [];
-    const fan = Array.isArray(chunk?.fanSpeed) ? (chunk.fanSpeed as any[]).map(Number) : [];
 
-    const n = Math.min(tsArr.length, h1m.length, h10m.length, h1h.length, h1d.length, vreg.length, asic.length, fan.length);
+    const n = Math.min(tsArr.length, h1m.length, h10m.length, h1h.length, h1d.length, vreg.length, asic.length);
     if (n <= 0) return 0;
 
     const lastTs = this.labels.length ? this.labels[this.labels.length - 1] : -Infinity;
@@ -248,7 +237,6 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
         this.hr1d[lastIdx] = h1d[i];
         this.vregTemp[lastIdx] = vreg[i];
         this.asicTemp[lastIdx] = asic[i];
-        this.fanSpeed[lastIdx] = fan[i];
         continue;
       }
 
@@ -259,7 +247,6 @@ trimToWindow(nowMs: number, windowMs: number = HOME_CFG.xAxis.fixedWindowMs): vo
       this.hr1d.push(h1d[i]);
       this.vregTemp.push(vreg[i]);
       this.asicTemp.push(asic[i]);
-      this.fanSpeed.push(fan[i]);
       appended++;
     }
 

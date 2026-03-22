@@ -78,13 +78,13 @@
             <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.HASH_RATE' | translate }}</th>
             <th>{{ 'SWARM.UPTIME' | translate }}</th>
             <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.SHARES' | translate }}</th>
-            <th>{{ 'SWARM.POWER' | translate }}</th>
-            <th>{{ 'SWARM.EFFICIENCY' | translate }}</th>
-            <th>ASIC °C</th>
-            <th>VR °C</th>
-            <th>ASIC Freq</th>
-            <th>In Vol.</th>
-            <th>ASIC Vol.</th>
+            <th class="gauge-col">{{ 'SWARM.POWER' | translate }}</th>
+            <th class="gauge-col">{{ 'SWARM.EFFICIENCY' | translate }}</th>
+            <th class="gauge-col">ASIC °C</th>
+            <th class="gauge-col">VR °C</th>
+            <th class="gauge-col">ASIC Freq</th>
+            <th class="gauge-col">In Vol.</th>
+            <th class="gauge-col">ASIC Vol.</th>
             <th [colSpan]="dp ? 2 : 1" class="th-condensed">{{ 'SWARM.POOL_DIFF' | translate }}</th>
             <th [colSpan]="dp ? 2 : 1" class="th-condensed">{{ 'SWARM.BEST_DIFF' | translate }}</th>
             <th>{{ 'SWARM.VERSION' | translate }}</th>
@@ -168,28 +168,28 @@
               </td>
 
               <!-- Power -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="axe.power" [min]="axe.minPower || 0" [max]="axe.maxPower || (axe.power * 1.5) || 20" [unit]="'W'" format="1.0-1" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- Efficiency J/TH -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="getEfficiency(axe)" [min]="0" [max]="30" [warn]="14.0" [crit]="18.0" okColor="#198754" warnColor="#f59e0b" critColor="#b02a37" [unit]="'J/TH'" format="1.1-1" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- ASIC Temperature -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="axe.temp" [min]="20" [max]="axe.overheat_temp || 85" [warn]="(axe.overheat_temp || 85) - 5" [crit]="(axe.overheat_temp || 85) - 2" [unit]="'°C'" format="1.0-0" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- VR Temperature -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge *ngIf="axe.vrTemp" [value]="axe.vrTemp" [min]="20" [max]="145" [warn]="90" [crit]="120" [unit]="'°C'" format="1.0-0" class="small-gauge mb-1"></app-gauge>
                   <span *ngIf="!axe.vrTemp" class="text-hint">n/a</span>
@@ -197,21 +197,21 @@
               </td>
 
               <!-- ASIC Frequency -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="axe.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- Input Voltage -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="getVoltageValue(axe.voltage)" format="1.1-1" [min]="getVoltageValue(axe.minVoltage)" [max]="getVoltageValue(axe.maxVoltage)" [unit]="'V'" class="small-gauge mb-1"></app-gauge>
                 </div>
               </td>
 
               <!-- ASIC Voltage -->
-              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle" style="padding: 0;">
+              <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="getVoltageValue(axe.coreVoltage)" [min]="0.9" [max]="1.8" [unit]="'V'" format="1.3-3" class="small-gauge mb-1"></app-gauge>
                 </div>
