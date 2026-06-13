@@ -124,6 +124,8 @@
     "TEMPERATURE_TARGET": "Zieltemperatur",
     "TARGET_TEMP": "Zieltemp (°C)",
     "SHUTDOWN_TEMP": "Abschalt-Temperatur",
+    "THERMAL_THROTTLE_ENABLE": "Dynamische thermische Drosselung aktivieren",
+    "THERMAL_THROTTLE_LIMIT": "Drosselungs-Schwellenwert (°C)",
     "POWER_LIMIT": "Leistungsgrenze",
     "HOSTNAME": "Hostname",
     "TIMEZONE": "Zeitzone",
@@ -230,7 +232,13 @@
     "POOL_DIFF": "Pool-Schwierigkeit",
     "VERSION": "Version",
     "EMPTY_LIST": "Leere Liste",
-    "IP_ADDRESS": "IP"
+    "IP_ADDRESS": "IP",
+    "TOTAL_EFFICIENCY": "Gesamteffizienz",
+    "EFFICIENCY": "Effizienz",
+    "FILTER_ALL": "Alle",
+    "FILTER_OFFLINE": "Offline",
+    "FILTER_HOT": "Heiß",
+    "FILTER_UNDERPERFORMING": "Unterleistung"
   },
   "INFLUXDB": {
     "TITLE": "InfluxDB-Konfiguration",

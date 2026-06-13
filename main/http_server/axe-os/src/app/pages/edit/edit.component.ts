@@ -219,6 +219,12 @@ export class EditComponent implements OnInit {
             Validators.max(90),
             Validators.required
           ]],
+          autoThrottle: [!!info.autoThrottle],
+          throttleTemp: [info.throttleTemp ?? 65, [
+            Validators.min(40),
+            Validators.max(90),
+            Validators.required
+          ]],
           vrFrequency: [info.vrFrequency, [
             Validators.min(1000),
             Validators.max(100000),

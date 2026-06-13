@@ -63,26 +63,109 @@
         <span class="text-primary fw-bold">{{ totals.bestDiff | humanReadable }}</span>
       </nb-card-body>
     </nb-card>
+    <nb-card class="text-center mb-0" style="flex: 1;">
+      <nb-card-body>
+        <span class="text-start">{{ 'SWARM.DEVICES' | translate }}</span>
+        <span class="text-primary fw-bold">{{ totals.onlineCount }}/{{ totals.deviceCount }}</span>
+      </nb-card-body>
+    </nb-card>
   </div>
+
+  <!-- ASIC Profiles -->
+  <nb-card class="mb-4">
+    <nb-card-header>ASIC Profiles Configuration</nb-card-header>
+    <nb-card-body>
+      <div class="row align-items-end">
+        <div class="col-md-3 mb-3 mb-md-0">
+          <label class="label mb-2 d-block">Saved Profiles</label>
+          <nb-select fullWidth [selected]="selectedProfileName" (selectedChange)="onProfileSelect($event)" placeholder="Select Profile">
+            <nb-option>-- Custom --</nb-option>
+            <nb-option *ngFor="let profile of savedProfiles" [value]="profile.name">{{ profile.name }}{{ isBackupProfile(profile) ? ' (Backup)' : '' }}</nb-option>
+          </nb-select>
+        </div>
+        
+        <div class="col-md-9">
+          <form [formGroup]="profileForm" class="row align-items-end">
+            <div class="col-md-3 mb-3 mb-md-0">
+              <label class="label mb-2 d-block">Frequency (MHz)</label>
+              <input type="number" nbInput fullWidth formControlName="frequency" placeholder="e.g. 500" />
+            </div>
+            
+            <div class="col-md-3 mb-3 mb-md-0">
+              <label class="label mb-2 d-block">Voltage (mV)</label>
+              <input type="number" nbInput fullWidth formControlName="coreVoltage" placeholder="e.g. 1200" />
+            </div>
+            
+            <div class="col-md-3 mb-3 mb-md-0">
+              <label class="label mb-2 d-block">Profile Name</label>
+              <input type="text" nbInput fullWidth formControlName="name" placeholder="Name" />
+            </div>
+
+            <div class="col-md-3 d-flex flex-wrap gap-2 mb-3 mb-md-0">
+              <button nbButton size="small" status="primary" (click)="saveProfile()" [disabled]="profileForm.invalid" [nbTooltip]="'Save Default Profile'">
+                <nb-icon icon="save-outline"></nb-icon>&nbsp;{{ 'COMMON.SAVE' | translate }}
+              </button>
+              <button nbButton size="small" status="info" (click)="backupProfile()" [disabled]="!profileForm.value.name" [nbTooltip]="'Backup Selected Devices'">
+                <nb-icon icon="copy-outline"></nb-icon>&nbsp;Backup
+              </button>
+              <button nbButton size="small" status="danger" (click)="deleteProfile()" [disabled]="!profileForm.value.name" [nbTooltip]="'Delete Profile'">
+                <nb-icon icon="trash-2-outline"></nb-icon>&nbsp;{{ 'COMMON.DELETE' | translate }}
+              </button>
+              <button nbButton size="small" status="success" (click)="applySettings()" [disabled]="selectedIpAddresses.size === 0" [nbTooltip]="'Apply to Selected (' + selectedIpAddresses.size + ')'">
+                <nb-icon icon="checkmark-outline"></nb-icon>&nbsp;{{ 'COMMON.APPLY' | translate }} ({{ selectedIpAddresses.size }})
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </nb-card-body>
+  </nb-card>
 
   <!-- Swarm Overview Table -->
   <nb-card class="mb-0">
     <nb-card-header>{{ 'SWARM.OVERVIEW' | translate }}</nb-card-header>
 
     <nb-card-body *ngIf="swarm.length; else empty">
+      <!-- Search & Filter -->
+      <div class="search-filter-bar mb-3">
+        <div class="search-input-wrapper">
+          <nb-icon icon="search-outline" class="search-icon"></nb-icon>
+          <input nbInput type="text" [(ngModel)]="searchTerm" [placeholder]="'COMMON.SEARCH' | translate" class="search-input" />
+          <button *ngIf="searchTerm" nbButton ghost size="small" (click)="searchTerm = ''" class="clear-btn">
+            <nb-icon icon="close-outline"></nb-icon>
+          </button>
+        </div>
+        <div class="filter-chips">
+          <button nbButton [status]="activeFilter === 'all' ? 'primary' : 'basic'" size="small" (click)="setFilter('all')">
+            {{ 'SWARM.FILTER_ALL' | translate }} ({{ swarm.length }})
+          </button>
+          <button nbButton [status]="activeFilter === 'offline' ? 'danger' : 'basic'" size="small" (click)="setFilter('offline')" [disabled]="getFilterCount('offline') === 0">
+            {{ 'SWARM.FILTER_OFFLINE' | translate }} ({{ getFilterCount('offline') }})
+          </button>
+          <button nbButton [status]="activeFilter === 'hot' ? 'warning' : 'basic'" size="small" (click)="setFilter('hot')" [disabled]="getFilterCount('hot') === 0">
+            {{ 'SWARM.FILTER_HOT' | translate }} 🔥 ({{ getFilterCount('hot') }})
+          </button>
+          <button nbButton [status]="activeFilter === 'underperforming' ? 'warning' : 'basic'" size="small" (click)="setFilter('underperforming')" [disabled]="getFilterCount('underperforming') === 0">
+            {{ 'SWARM.FILTER_UNDERPERFORMING' | translate }} ⚠️ ({{ getFilterCount('underperforming') }})
+          </button>
+        </div>
+      </div>
+
+      <div class="table-scroll-wrapper">
       <table class="swarm-table">
         @let dp = hasDualPoolRows();
         <thead>
           <tr>
-            <th>{{ 'SWARM.IP_ADDRESS' | translate }}</th>
-            <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.HASH_RATE' | translate }}</th>
-            <th>{{ 'SWARM.UPTIME' | translate }}</th>
+            <th class="gauge-col sticky-col sticky-col-1" style="width: 40px; text-align: center;"><nb-checkbox [checked]="isAllSelected()" (checkedChange)="toggleSelectAll($event)"></nb-checkbox></th>
+            <th class="sticky-col sticky-col-2 sortable" (click)="onSort('IP')">{{ 'SWARM.IP_ADDRESS' | translate }} <span class="sort-arrow" [class.active]="sortColumn === 'IP'">{{ sortColumn === 'IP' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+            <th [colSpan]="dp ? 2 : 1" class="sortable" (click)="onSort('hashRate')">{{ 'SWARM.HASH_RATE' | translate }} <span class="sort-arrow" [class.active]="sortColumn === 'hashRate'">{{ sortColumn === 'hashRate' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+            <th class="sortable" (click)="onSort('uptimeSeconds')">{{ 'SWARM.UPTIME' | translate }} <span class="sort-arrow" [class.active]="sortColumn === 'uptimeSeconds'">{{ sortColumn === 'uptimeSeconds' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
             <th [colSpan]="dp ? 2 : 1">{{ 'SWARM.SHARES' | translate }}</th>
-            <th class="gauge-col">{{ 'SWARM.POWER' | translate }}</th>
-            <th class="gauge-col">{{ 'SWARM.EFFICIENCY' | translate }}</th>
-            <th class="gauge-col">ASIC °C</th>
+            <th class="gauge-col sortable" (click)="onSort('power')">{{ 'SWARM.POWER' | translate }} <span class="sort-arrow" [class.active]="sortColumn === 'power'">{{ sortColumn === 'power' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+            <th class="gauge-col sortable" (click)="onSort('efficiency')">{{ 'SWARM.EFFICIENCY' | translate }} <span class="sort-arrow" [class.active]="sortColumn === 'efficiency'">{{ sortColumn === 'efficiency' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
+            <th class="gauge-col sortable" (click)="onSort('temp')">ASIC °C <span class="sort-arrow" [class.active]="sortColumn === 'temp'">{{ sortColumn === 'temp' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
             <th class="gauge-col">VR °C</th>
-            <th class="gauge-col">ASIC Freq</th>
+            <th class="gauge-col sortable" (click)="onSort('frequency')">ASIC Freq <span class="sort-arrow" [class.active]="sortColumn === 'frequency'">{{ sortColumn === 'frequency' ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅' }}</span></th>
             <th class="gauge-col">In Vol.</th>
             <th class="gauge-col">ASIC Vol.</th>
             <th [colSpan]="dp ? 2 : 1" class="th-condensed">{{ 'SWARM.POOL_DIFF' | translate }}</th>
@@ -93,7 +176,8 @@
             <th>&nbsp;</th>
           </tr>
           <tr *ngIf="dp" class="dual-pool-header">
-            <td></td>
+            <td class="sticky-col sticky-col-1"></td>
+            <td class="sticky-col sticky-col-2"></td>
             <td>Pool 1</td>
             <td>Pool 2</td>
             <td></td>
@@ -117,17 +201,21 @@
           </tr>
         </thead>
         <tbody>
-          <ng-container *ngFor="let axe of swarm">
+          <ng-container *ngFor="let axe of displayedSwarm; trackBy: trackByIp">
             @let dualPool = isDualPoolEntry(axe);
             @let p0 = axe.stratum?.pools[0];
             @let p1 = axe.stratum?.pools[1];
-            <tr class="base-row">
+            <tr class="base-row" [class.offline-row]="axe.offline">
+              <td [rowSpan]="dualPool ? 2 : 1" class="text-center align-middle sticky-col sticky-col-1">
+                <nb-checkbox [checked]="selectedIpAddresses.has(axe.IP)" (checkedChange)="toggleDeviceSelection(axe.IP, $event)"></nb-checkbox>
+              </td>
               <!-- IP with swarmColor dot -->
-              <td [rowSpan]="dualPool ? 2 : 1">
+              <td [rowSpan]="dualPool ? 2 : 1" class="sticky-col sticky-col-2">
                 <a [href]="'http://' + axe.IP" target="_blank">
                   <span class="swarm-dot" [style.background]="axe.swarmColor || 'blue'"></span>
                   {{ axe.IP }}
                 </a>
+                <span *ngIf="axe.offline" class="badge-offline">Offline</span>
                 <div class="text-sm">{{ axe.hostname }}</div>
               </td>
 
@@ -159,11 +247,12 @@
 
               <!-- Shares (Accepted & Rejected) -->
               <td [colSpan]="dp ? 2 : 1">
-                <div [nbTooltip]="'UPDATE.SHARES_ACCEPTED' | translate" tooltipPosition="top">
+                <div [nbTooltip]="'UPDATE.SHARES_ACCEPTED' | translate" tooltipPosition="top" class="text-success fw-bold">
                   {{ axe.sharesAccepted | number:'1.0-0' }}
                 </div>
-                <div [nbTooltip]="'UPDATE.SHARES_REJECTED' | translate" tooltipPosition="top" class="text-sm">
+                <div [nbTooltip]="'UPDATE.SHARES_REJECTED' | translate" tooltipPosition="top" class="text-sm text-danger mt-1">
                   {{ axe.sharesRejected | number:'1.0-0' }}
+                  <span class="text-hint" style="font-size: 0.85em;">({{ getRejectRate(axe) | number:'1.2-2' }}%)</span>
                 </div>
               </td>
 
@@ -200,6 +289,9 @@
               <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
                   <app-gauge [value]="axe.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'" class="small-gauge mb-1"></app-gauge>
+                  <span *ngIf="axe.autoThrottle" class="badge badge-success" style="font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background-color: #28a745; color: #fff;"
+                    [nbTooltip]="'Auto-Tune (' + (axe.throttleTemp || 65) + '°C)'"
+                  >AT</span>
                 </div>
               </td>
 
@@ -254,7 +346,7 @@
                 </button>
               </td>
             </tr>
-            <tr *ngIf="dualPool" class="dual-pool-2nd-row">
+            <tr *ngIf="dualPool" class="dual-pool-2nd-row" [class.offline-row]="axe.offline">
               @let c0 = isPoolConnected(axe, 0);
               @let c1 = isPoolConnected(axe, 1);
               @let e0 = c0 ? '' : 'text-danger';
@@ -262,12 +354,18 @@
               <td class="shrink {{ e0 }}">{{ getActivePoolHashrate(axe, 0) | hashSuffix }}</td>
               <td class="shrink {{ e1 }}">{{ getActivePoolHashrate(axe, 1) | hashSuffix }}</td>
               <td class="shrink {{ e0 }}">
-                {{ c0 ? p0.accepted : 0 }}<br />
-                {{ c0 ? p0.rejected : 0 }}
+                <div class="text-success">{{ c0 ? p0.accepted : 0 }}</div>
+                <div class="text-danger text-sm mt-1">
+                  {{ c0 ? p0.rejected : 0 }}
+                  <span class="text-hint" style="font-size: 0.85em;" *ngIf="c0">({{ getPoolRejectRate(p0) | number:'1.2-2' }}%)</span>
+                </div>
               </td>
               <td class="shrink {{ e1 }}">
-                {{ c1 ? p1.accepted : 0 }}<br />
-                {{ c1 ? p1.rejected : 0 }}
+                <div class="text-success">{{ c1 ? p1.accepted : 0 }}</div>
+                <div class="text-danger text-sm mt-1">
+                  {{ c1 ? p1.rejected : 0 }}
+                  <span class="text-hint" style="font-size: 0.85em;" *ngIf="c1">({{ getPoolRejectRate(p1) | number:'1.2-2' }}%)</span>
+                </div>
               </td>
               <td class="shrink {{ e0 }}">{{ c0 ? p0.poolDifficulty : 0 }}</td>
               <td class="shrink {{ e1 }}">{{ c1 ? p1.poolDifficulty : 0 }}</td>
@@ -277,6 +375,7 @@
           </ng-container>
         </tbody>
       </table>
+      </div>
 
       <!-- Legend -->
       <div class="d-flex flex-wrap gap-3 mt-3 text-sm justify-content-center">

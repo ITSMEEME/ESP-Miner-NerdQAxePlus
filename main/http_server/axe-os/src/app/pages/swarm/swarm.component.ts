@@ -6,9 +6,11 @@ import { LocalStorageService } from '../../services/local-storage.service';
 import { SystemService } from 'src/app/services/system.service';
 import { NbToastrService } from '@nebular/theme';
 import { LoadingService } from '../../services/loading.service';
+import { ISwarmAsicProfile } from '../../models/ISwarmAsicProfile';
 
 const SWARM_DATA = 'SWARM_DATA';
 const SWARM_REFRESH_TIME = 'SWARM_REFRESH_TIME';
+const SWARM_ASIC_PROFILES = 'SWARM_ASIC_PROFILES';
 
 @Component({
   selector: 'app-swarm',
@@ -30,7 +32,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
   public refreshIntervalTime = 30;
   public refreshTimeSet = 30;
 
-  public totals: { hashRate: number, power: number, efficiency: number, bestDiff: number } = { hashRate: 0, power: 0, efficiency: 0, bestDiff: 0 };
+  public totals: { hashRate: number, power: number, efficiency: number, bestDiff: number, deviceCount: number, onlineCount: number } = { hashRate: 0, power: 0, efficiency: 0, bestDiff: 0, deviceCount: 0, onlineCount: 0 };
 
   public isRefreshing = false;
 
@@ -38,8 +40,22 @@ export class SwarmComponent implements OnInit, OnDestroy {
 
   public ipAddress: string;
 
+  // Swarm Profiles
+  public selectedIpAddresses: Set<string> = new Set();
+  public profileForm: FormGroup;
+  public savedProfiles: ISwarmAsicProfile[] = [];
+  public selectedProfileName: string | null = null;
+
   // Legende
   public colorLegend: { color: string; label: string; count: number }[] = [];
+
+  // Sorting
+  public sortColumn: string = 'IP';
+  public sortDirection: 'asc' | 'desc' = 'asc';
+
+  // Search & Filter
+  public searchTerm: string = '';
+  public activeFilter: 'all' | 'offline' | 'hot' | 'underperforming' = 'all';
 
   constructor(
     private fb: FormBuilder,
@@ -55,6 +71,14 @@ export class SwarmComponent implements OnInit, OnDestroy {
         Validators.pattern('(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)')
       ]]
     });
+
+    this.profileForm = this.fb.group({
+      name: ['', Validators.required],
+      frequency: [null, [Validators.min(100), Validators.max(2000)]],
+      coreVoltage: [null, [Validators.min(800), Validators.max(2000)]]
+    });
+
+    this.savedProfiles = this.localStorageService.getObject(SWARM_ASIC_PROFILES) || [];
 
     const storedRefreshTime = this.localStorageService.getNumber(SWARM_REFRESH_TIME) ?? 30;
     this.refreshIntervalTime = storedRefreshTime;
@@ -161,6 +185,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
                   swarmColor: asic.swarmColor ?? 'blue',
                 } : {}),
                 supportsAsicApi,
+                offline: false,
               };
               merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
               merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
@@ -219,6 +244,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
             swarmColor: asic.swarmColor ?? 'blue'
           } : {}),
           supportsAsicApi,
+          offline: false,
         };
         merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
         if (!merged['swarmColor']) merged['swarmColor'] = 'blue';
@@ -299,6 +325,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
                 swarmColor: asic.swarmColor ?? info?.swarmColor ?? existingDevice?.swarmColor
               } : {}),
               supportsAsicApi,
+              offline: false,
             };
             merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
             if (!merged['swarmColor']) merged['swarmColor'] = existingDevice?.swarmColor ?? 'blue';
@@ -324,6 +351,7 @@ export class SwarmComponent implements OnInit, OnDestroy {
               poolDifficulty: 0,
               swarmColor: existingDevice?.swarmColor ?? 'blue',
               supportsAsicApi: existingDevice?.supportsAsicApi ?? false,
+              offline: true,
             });
           })
         ),
@@ -376,6 +404,8 @@ export class SwarmComponent implements OnInit, OnDestroy {
       .filter(v => !isNaN(v) && isFinite(v));
 
     this.totals.bestDiff = numericDiffs.length > 0 ? Math.max(...numericDiffs) : 0;
+    this.totals.deviceCount = this.swarm.length;
+    this.totals.onlineCount = this.swarm.filter(axe => !axe.offline).length;
   }
 
   public getEfficiency(axe: any): number {
@@ -385,7 +415,8 @@ export class SwarmComponent implements OnInit, OnDestroy {
 
   public getHashRateProgress(axe: any): number {
     if (!axe.expectedHashRate || axe.expectedHashRate === 0) return 0;
-    const progress = (axe.hashRate / axe.expectedHashRate) * 100;
+    // Die Markierung im HTML ist bei 90%, daher wird die erwartete Hashrate auf 90% skaliert
+    const progress = (axe.hashRate / axe.expectedHashRate) * 90;
     return Math.min(progress, 100);
   }
 
@@ -431,6 +462,190 @@ export class SwarmComponent implements OnInit, OnDestroy {
       return { color, label, count };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  // --- ASIC Profile Methods ---
+  public toggleDeviceSelection(ip: string, checked: boolean) {
+    if (checked) {
+      this.selectedIpAddresses.add(ip);
+    } else {
+      this.selectedIpAddresses.delete(ip);
+    }
+  }
+
+  public isAllSelected(): boolean {
+    return this.swarm.length > 0 && this.selectedIpAddresses.size === this.swarm.length;
+  }
+
+  public toggleSelectAll(checked: boolean) {
+    if (checked) {
+      this.swarm.forEach(axe => this.selectedIpAddresses.add(axe.IP));
+    } else {
+      this.selectedIpAddresses.clear();
+    }
+  }
+
+  public onProfileSelect(profileName: string) {
+    const profile = this.savedProfiles.find(p => p.name === profileName);
+    if (!profile) return;
+    this.selectedProfileName = profile.name;
+    this.selectedIpAddresses.clear();
+    if (profile.ips && profile.ips.length) {
+      profile.ips.forEach(ip => {
+        // Only select if the device actually exists in current swarm
+        if (this.swarm.some(a => a.IP === ip)) {
+          this.selectedIpAddresses.add(ip);
+        }
+      });
+    }
+    this.profileForm.patchValue({
+      name: profile.name,
+      frequency: profile.frequency,
+      coreVoltage: profile.coreVoltage
+    });
+  }
+
+  public saveProfile() {
+    if (this.profileForm.invalid) {
+      this.toastrService.warning('Please enter a valid profile name and settings.', 'Invalid Profile');
+      return;
+    }
+    const val = this.profileForm.value;
+    const newProfile: ISwarmAsicProfile = {
+      name: val.name,
+      frequency: val.frequency,
+      coreVoltage: val.coreVoltage,
+      ips: Array.from(this.selectedIpAddresses)
+    };
+
+    const existingIdx = this.savedProfiles.findIndex(p => p.name === newProfile.name);
+    if (existingIdx >= 0) {
+      this.savedProfiles[existingIdx] = newProfile;
+    } else {
+      this.savedProfiles.push(newProfile);
+    }
+
+    this.localStorageService.setObject(SWARM_ASIC_PROFILES, this.savedProfiles);
+    this.selectedProfileName = newProfile.name;
+    this.toastrService.success(`Profile ${newProfile.name} saved`, 'Success');
+  }
+
+  public backupProfile() {
+    const name = this.profileForm.value.name;
+    if (!name) {
+      this.toastrService.warning('Please enter a profile name for the backup.', 'Name required');
+      return;
+    }
+
+    const targetIps = this.selectedIpAddresses.size > 0 
+      ? Array.from(this.selectedIpAddresses)
+      : this.swarm.map(a => a.IP);
+
+    const deviceSettings: { [ip: string]: { frequency: number, coreVoltage: number } } = {};
+    
+    for (const ip of targetIps) {
+      // Find the device and check if it has the required values
+      const device = this.swarm.find(a => a.IP === ip);
+      if (device && device.frequency != null && device.coreVoltage != null) {
+        deviceSettings[ip] = {
+          frequency: device.frequency,
+          coreVoltage: device.coreVoltage
+        };
+      }
+    }
+
+    const newProfile: ISwarmAsicProfile = {
+      name: name,
+      ips: targetIps,
+      frequency: null,
+      coreVoltage: null,
+      deviceSettings: deviceSettings
+    };
+
+    const existingIdx = this.savedProfiles.findIndex(p => p.name === newProfile.name);
+    if (existingIdx >= 0) {
+      this.savedProfiles[existingIdx] = newProfile;
+    } else {
+      this.savedProfiles.push(newProfile);
+    }
+
+    this.localStorageService.setObject(SWARM_ASIC_PROFILES, this.savedProfiles);
+    this.selectedProfileName = newProfile.name;
+    this.toastrService.success(`Backup Profile ${newProfile.name} saved`, 'Success');
+  }
+
+  public deleteProfile() {
+    const name = this.profileForm.value.name;
+    if (!name) return;
+    this.savedProfiles = this.savedProfiles.filter(p => p.name !== name);
+    this.localStorageService.setObject(SWARM_ASIC_PROFILES, this.savedProfiles);
+    this.toastrService.success(`Profile ${name} deleted`, 'Success');
+    if (this.selectedProfileName === name) {
+      this.selectedProfileName = null;
+    }
+    this.profileForm.reset();
+    this.selectedIpAddresses.clear();
+  }
+
+  public applySettings() {
+    if (this.selectedIpAddresses.size === 0) {
+      this.toastrService.warning('No devices selected', 'Warning');
+      return;
+    }
+
+    const val = this.profileForm.value;
+    const loadedProfile = this.savedProfiles.find(p => p.name === this.selectedProfileName);
+
+    const hasGlobalSettings = val.frequency != null || val.coreVoltage != null;
+    const hasDeviceSettings = loadedProfile?.deviceSettings && Object.keys(loadedProfile.deviceSettings).length > 0;
+
+    if (!hasGlobalSettings && !hasDeviceSettings) {
+      this.toastrService.warning('Please enter frequency or voltage to apply, or load a backup profile', 'Warning');
+      return;
+    }
+
+    const requests = Array.from(this.selectedIpAddresses).map(ip => {
+      // Find if this specific device supportsAsicApi
+      const device = this.swarm.find(a => a.IP === ip);
+      if (!device?.supportsAsicApi) {
+         this.toastrService.warning(`Skipped ${ip} - Firmware update required for ASIC API`, 'Skipped');
+         return of(null);
+      }
+      
+      const payload: any = {};
+      
+      // Merge logic: Per-device backup > Profile global form
+      if (loadedProfile?.deviceSettings?.[ip]) {
+        payload.frequency = loadedProfile.deviceSettings[ip].frequency;
+        payload.coreVoltage = loadedProfile.deviceSettings[ip].coreVoltage;
+      } else {
+        if (val.frequency != null) payload.frequency = val.frequency;
+        if (val.coreVoltage != null) payload.coreVoltage = val.coreVoltage;
+      }
+
+      // If nothing actually resolved for this specific IP, skip it gracefully
+      if (payload.frequency == null && payload.coreVoltage == null) {
+        return of(null);
+      }
+
+      return this.systemService.updateSystem(`http://${ip}`, payload).pipe(
+        catchError(err => {
+          this.toastrService.danger(`Failed to update settings for ${ip}`, 'Error');
+          return of(null);
+        })
+      );
+    });
+
+    forkJoin(requests)
+      .pipe(this.loadingService.lockUIUntilComplete())
+      .subscribe(results => {
+        const successCount = results.filter(r => r !== null).length;
+        if (successCount > 0) {
+          this.toastrService.success(`Applied settings to ${successCount} devices`, 'Success');
+          // Wait a bit and refresh list
+          setTimeout(() => this.refreshList(), 2000);
+        }
+      });
   }
 
   public isDualPoolEntry(axe: any): boolean {
@@ -482,6 +697,100 @@ export class SwarmComponent implements OnInit, OnDestroy {
   }
 
   public getVoltageValue(voltage: any): number {
-    return voltage || 0;
+    const val = voltage || 0;
+    return val > 100 ? val / 1000.0 : val;
+  }
+
+  public getRejectRate(axe: any): number {
+    const accepted = axe.sharesAccepted || 0;
+    const rejected = axe.sharesRejected || 0;
+    if (accepted === 0 && rejected === 0) return 0;
+    return (rejected / (accepted + rejected)) * 100;
+  }
+
+  public getPoolRejectRate(pool: any): number {
+    const accepted = pool?.accepted || 0;
+    const rejected = pool?.rejected || 0;
+    if (accepted === 0 && rejected === 0) return 0;
+    return (rejected / (accepted + rejected)) * 100;
+  }
+
+  // --- Sorting ---
+  public onSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'asc';
+    }
+  }
+
+  private getSortValue(axe: any, column: string): number {
+    switch (column) {
+      case 'IP': return this.ipToInt(axe.IP);
+      case 'hashRate': return axe.hashRate || 0;
+      case 'uptimeSeconds': return axe.uptimeSeconds || 0;
+      case 'temp': return axe.temp || 0;
+      case 'power': return axe.power || 0;
+      case 'efficiency': return this.getEfficiency(axe);
+      case 'frequency': return axe.frequency || 0;
+      default: return 0;
+    }
+  }
+
+  public get displayedSwarm(): any[] {
+    let list = [...this.swarm];
+
+    if (this.searchTerm.trim()) {
+      const term = this.searchTerm.toLowerCase().trim();
+      list = list.filter(axe =>
+        (axe.IP || '').toLowerCase().includes(term) ||
+        (axe.hostname || '').toLowerCase().includes(term) ||
+        (axe.deviceModel || '').toLowerCase().includes(term) ||
+        (axe.ASICModel || '').toLowerCase().includes(term)
+      );
+    }
+
+    switch (this.activeFilter) {
+      case 'offline':
+        list = list.filter(axe => axe.offline === true);
+        break;
+      case 'hot':
+        list = list.filter(axe => axe.temp > ((axe.overheat_temp || 85) - 5));
+        break;
+      case 'underperforming':
+        list = list.filter(axe => axe.expectedHashRate > 0 && (axe.hashRate / axe.expectedHashRate) < 0.8);
+        break;
+    }
+
+    list.sort((a, b) => {
+      const valA = this.getSortValue(a, this.sortColumn);
+      const valB = this.getSortValue(b, this.sortColumn);
+      const cmp = valA < valB ? -1 : valA > valB ? 1 : 0;
+      return this.sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return list;
+  }
+
+  public setFilter(filter: 'all' | 'offline' | 'hot' | 'underperforming'): void {
+    this.activeFilter = this.activeFilter === filter ? 'all' : filter;
+  }
+
+  public getFilterCount(filter: string): number {
+    switch (filter) {
+      case 'offline': return this.swarm.filter(a => a.offline === true).length;
+      case 'hot': return this.swarm.filter(a => a.temp > ((a.overheat_temp || 85) - 5)).length;
+      case 'underperforming': return this.swarm.filter(a => a.expectedHashRate > 0 && (a.hashRate / a.expectedHashRate) < 0.8).length;
+      default: return this.swarm.length;
+    }
+  }
+
+  public isBackupProfile(profile: ISwarmAsicProfile): boolean {
+    return !!profile.deviceSettings && Object.keys(profile.deviceSettings).length > 0;
+  }
+
+  public trackByIp(index: number, axe: any): string {
+    return axe.IP;
   }
 }

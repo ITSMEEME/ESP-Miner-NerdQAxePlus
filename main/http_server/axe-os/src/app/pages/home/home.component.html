@@ -285,12 +285,28 @@
         <div class="col-12 col-lg-4">
           <nb-card class="h-100">
             <nb-card-header>
-              <span class="text-hint">{{ 'PERFORMANCE.TITLE' | translate }}</span>
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-hint">{{ 'PERFORMANCE.TITLE' | translate }}</span>
+                <nb-badge *ngIf="info.autoThrottle && !info.isThrottled"
+                  text="Auto-Tune ✓"
+                  status="success"
+                  position="top end"
+                  [nbTooltip]="('SETTINGS.THERMAL_THROTTLE_ENABLE' | translate) + ' (' + info.throttleTemp + '°C)'"
+                  style="position: relative; top: auto; right: auto;">
+                </nb-badge>
+                <nb-badge *ngIf="info.autoThrottle && info.isThrottled"
+                  text="Throttled ⚠"
+                  status="warning"
+                  position="top end"
+                  [nbTooltip]="('SETTINGS.THERMAL_THROTTLE_LIMIT' | translate) + ': ' + info.throttleTemp + '°C. Active: ' + (info.activeFrequency || info.frequency) + ' MHz (Target: ' + info.frequency + ' MHz)'"
+                  style="position: relative; top: auto; right: auto;">
+                </nb-badge>
+              </div>
             </nb-card-header>
             <nb-card-body class="no-scroll">
               <div class="row text-center">
                 <div class="col-6">
-                  <app-gauge [value]="info.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'"
+                  <app-gauge [value]="info.activeFrequency || info.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'"
                     [label]="'PERFORMANCE.ASIC_FREQUENCY' | translate"></app-gauge>
                 </div>
                 <div class="col-6">

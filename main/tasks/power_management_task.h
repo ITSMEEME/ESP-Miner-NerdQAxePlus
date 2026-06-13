@@ -37,6 +37,9 @@ class PowerManagementTask {
     bool m_shutdown = false;
     PID *m_pid = nullptr;
     Board* m_board = nullptr;
+    uint64_t m_last_throttle_change = 0;
+    uint16_t m_active_frequency = 0;
+    uint16_t m_throttle_ceiling = 0;  // hard cap: max freq during throttle recovery
 
     void checkCoreVoltageChanged();
     void checkAsicFrequencyChanged();
@@ -92,6 +95,9 @@ class PowerManagementTask {
     {
         return m_fanPerc;
     };
+
+    uint16_t getActiveFrequency();
+    bool isThrottled();
 
     void lock() {
         xSemaphoreTakeRecursive(m_mutex, portMAX_DELAY);

@@ -124,6 +124,8 @@
     "TEMPERATURE_TARGET": "Temperatura Objetivo",
     "TARGET_TEMP": "Temp Objetivo (°C)",
     "SHUTDOWN_TEMP": "Temperatura de Apagado",
+    "THERMAL_THROTTLE_ENABLE": "Activar restricción térmica dinámica",
+    "THERMAL_THROTTLE_LIMIT": "Umbral de restricción (°C)",
     "POWER_LIMIT": "Límite de Potencia",
     "HOSTNAME": "Nombre de host",
     "TIMEZONE": "Zona Horaria",
@@ -230,7 +232,13 @@
     "POOL_DIFF": "Dificultad Pool",
     "VERSION": "Versión",
     "EMPTY_LIST": "Lista Vacía",
-    "IP_ADDRESS": "IP"
+    "IP_ADDRESS": "IP",
+    "TOTAL_EFFICIENCY": "Eficiencia Total",
+    "EFFICIENCY": "Eficiencia",
+    "FILTER_ALL": "Todos",
+    "FILTER_OFFLINE": "Fuera de línea",
+    "FILTER_HOT": "Caliente",
+    "FILTER_UNDERPERFORMING": "Bajo rendimiento"
   },
   "INFLUXDB": {
     "TITLE": "Configuración InfluxDB",

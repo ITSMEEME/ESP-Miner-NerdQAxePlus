@@ -381,3 +381,113 @@ nb-slider {
   min-width: 100px !important;
   padding: 0 !important;
 }
+
+// --- Phase 1+2 UX Improvements ---
+
+.table-scroll-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sticky-col {
+  position: sticky;
+  z-index: 2;
+  background: var(--card-background-color);
+}
+
+.sticky-col-1 {
+  left: 0;
+}
+
+.sticky-col-2 {
+  left: 40px;
+}
+
+// Ensure sticky headers have higher z-index
+thead .sticky-col {
+  z-index: 3;
+  background: var(--button-filled-info-background-color);
+}
+
+.dual-pool-header .sticky-col {
+  z-index: 3;
+  background: var(--button-filled-info-background-color);
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+
+  &:hover {
+    opacity: 0.85;
+  }
+}
+
+.sort-arrow {
+  font-size: 0.7em;
+  opacity: 0.35;
+  margin-left: 2px;
+
+  &.active {
+    opacity: 1;
+  }
+}
+
+.offline-row {
+  opacity: 0.45;
+}
+
+.badge-offline {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: bold;
+  color: #fff;
+  background: #dc3545;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.search-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    z-index: 1;
+    opacity: 0.5;
+    font-size: 1.1em;
+  }
+
+  .search-input {
+    padding-left: 34px !important;
+    width: 100%;
+  }
+
+  .clear-btn {
+    position: absolute;
+    right: 2px;
+  }
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

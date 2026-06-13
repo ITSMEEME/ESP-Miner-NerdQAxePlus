@@ -89,10 +89,17 @@ void PowerManagementTask::checkAsicFrequencyChanged()
 
     if (asic_frequency != last_asic_frequency) {
         ESP_LOGI(TAG, "setting new asic frequency to %uMHz", asic_frequency);
-        if (!m_board->setAsicFrequency((float) asic_frequency)) {
-            ESP_LOGE(TAG, "pll setting not found for %uMHz", asic_frequency);
+        if (m_board->setAsicFrequency((float) asic_frequency)) {
+            ESP_LOGI(TAG, "successfully set asic frequency to %uMHz", asic_frequency);
+            last_asic_frequency = asic_frequency;
+            m_active_frequency = asic_frequency;
+            m_throttle_ceiling = 0;
+        } else {
+            ESP_LOGE(TAG, "failed to set asic frequency to %uMHz (pll setting not found or driver error)", asic_frequency);
+            last_asic_frequency = asic_frequency;
+            m_active_frequency = asic_frequency;
+            m_throttle_ceiling = 0;
         }
-        last_asic_frequency = asic_frequency;
     }
 }
 
@@ -360,6 +367,78 @@ void PowerManagementTask::task()
 
         influx_task_set_temperature(m_chipTempMax, m_vrTemp);
 
+        // thermal throttling logic
+        if (m_board->isInitialized()) {
+            bool auto_throttle = Config::isAutoThrottleEnabled();
+            uint16_t throttle_temp = Config::getThrottleTemp();
+            uint16_t base_freq = m_board->getAsicFrequency();
+            uint64_t current_time = esp_timer_get_time();
+
+            if (!auto_throttle || m_chipTempMax == 0.0f) {
+                // reset ceiling when throttle is disabled
+                m_throttle_ceiling = 0;
+                if (m_active_frequency != base_freq && m_active_frequency != 0) {
+                    ESP_LOGI(TAG, "auto-throttle disabled, restoring base frequency %uMHz", base_freq);
+                    if (m_board->setAsicFrequency((float) base_freq)) {
+                        m_active_frequency = base_freq;
+                    } else {
+                        ESP_LOGE(TAG, "failed to restore base frequency %uMHz", base_freq);
+                    }
+                }
+            } else {
+                // effective ceiling: never exceed the frequency that was active
+                // when throttling first kicked in, even if user raises base_freq
+                uint16_t effective_ceiling = m_throttle_ceiling
+                    ? std::min(base_freq, m_throttle_ceiling)
+                    : base_freq;
+
+                uint64_t cooldown_us = 90000000ULL; // 90 seconds
+                if ((current_time - m_last_throttle_change) >= cooldown_us) {
+                    if (m_chipTempMax > throttle_temp) {
+                        if (m_active_frequency > 500) {
+                            // snapshot ceiling on first throttle-down
+                            if (m_throttle_ceiling == 0) {
+                                m_throttle_ceiling = base_freq;
+                                ESP_LOGI(TAG, "Throttle ceiling locked at %uMHz", m_throttle_ceiling);
+                            }
+                            uint16_t next_freq = m_active_frequency - 5;
+                            if (next_freq < 500) next_freq = 500;
+                            ESP_LOGW(TAG, "Thermal throttle active! Temp: %.2f°C limit: %u°C. Lowering freq to %uMHz (ceiling: %uMHz)", m_chipTempMax, throttle_temp, next_freq, m_throttle_ceiling);
+                            if (m_board->setAsicFrequency((float) next_freq)) {
+                                m_active_frequency = next_freq;
+                                m_last_throttle_change = current_time;
+                            } else {
+                                ESP_LOGE(TAG, "failed to apply thermal throttle frequency step to %uMHz", next_freq);
+                            }
+                        }
+                    } else if (m_chipTempMax < (throttle_temp - 5) && m_active_frequency < effective_ceiling) {
+                        uint16_t next_freq = m_active_frequency + 5;
+                        if (next_freq > effective_ceiling) next_freq = effective_ceiling;
+                        ESP_LOGI(TAG, "Cooling down. Temp: %.2f°C limit: %u°C. Raising freq to %uMHz (ceiling: %uMHz)", m_chipTempMax, throttle_temp - 5, next_freq, m_throttle_ceiling);
+                        if (m_board->setAsicFrequency((float) next_freq)) {
+                            m_active_frequency = next_freq;
+                            m_last_throttle_change = current_time;
+                            // reset ceiling when fully recovered
+                            if (m_active_frequency >= effective_ceiling) {
+                                ESP_LOGI(TAG, "Throttle fully recovered, ceiling released");
+                                m_throttle_ceiling = 0;
+                            }
+                        } else {
+                            ESP_LOGE(TAG, "failed to apply frequency ramp-up step to %uMHz", next_freq);
+                        }
+                    } else if (m_active_frequency > effective_ceiling) {
+                        ESP_LOGI(TAG, "Active frequency %uMHz is higher than effective ceiling %uMHz, restoring ceiling", m_active_frequency, effective_ceiling);
+                        if (m_board->setAsicFrequency((float) effective_ceiling)) {
+                            m_active_frequency = effective_ceiling;
+                            m_last_throttle_change = current_time;
+                        } else {
+                            ESP_LOGE(TAG, "failed to restore frequency to effective ceiling %uMHz", effective_ceiling);
+                        }
+                    }
+                }
+            }
+        }
+
         float vr_maxTemp = asic_overheat_temp;
         if (m_board->getVrMaxTemp()) {
             vr_maxTemp = m_board->getVrMaxTemp();
@@ -412,4 +491,16 @@ void PowerManagementTask::task()
         last_time = start;
 #endif
     }
+}
+
+uint16_t PowerManagementTask::getActiveFrequency()
+{
+    return m_active_frequency;
+}
+
+bool PowerManagementTask::isThrottled()
+{
+    if (!m_board) return false;
+    uint16_t base_freq = m_board->getAsicFrequency();
+    return Config::isAutoThrottleEnabled() && m_active_frequency > 0 && m_active_frequency < base_freq;
 }

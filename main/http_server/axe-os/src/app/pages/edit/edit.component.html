@@ -356,6 +356,16 @@
                         <input nbInput id="overheat_temp" formControlName="overheat_temp" type="number" />
                     </div>
                 </div>
+                <!-- Dynamic Thermal Throttling Setup -->
+                <div class="form-row mt-2">
+                    <nb-checkbox formControlName="autoThrottle">{{ 'SETTINGS.THERMAL_THROTTLE_ENABLE' | translate }}</nb-checkbox>
+                </div>
+                <div class="form-row" *ngIf="form.controls['autoThrottle'].value">
+                    <label for="throttleTemp" class="form-label">{{ 'SETTINGS.THERMAL_THROTTLE_LIMIT' | translate }}:</label>
+                    <div class="form-control-wrapper">
+                        <input nbInput id="throttleTemp" formControlName="throttleTemp" type="number" />
+                    </div>
+                </div>
                 <div class="form-row" *ngIf="supportLevel >= 2">
                     <nb-checkbox formControlName="invertfanpolarity">{{ 'FAN.INVERT_POLARITY' | translate }}</nb-checkbox>
                 </div>

@@ -36,6 +36,8 @@
 #define NVS_CONFIG_SELF_TEST "selftest"
 #define NVS_CONFIG_AUTO_SCREEN_OFF "autoscreenoff"
 #define NVS_CONFIG_OVERHEAT_TEMP "overheat_temp"
+#define NVS_CONFIG_THROTTLE_ENABLE "thr_en"
+#define NVS_CONFIG_THROTTLE_TEMP "thr_tmp"
 
 #define NVS_CONFIG_INFLUX_ENABLE "influx_enable"
 #define NVS_CONFIG_INFLUX_URL "influx_url"
@@ -144,6 +146,7 @@ namespace Config {
     inline uint16_t getOverheatTemp() { return nvs_config_get_u16(NVS_CONFIG_OVERHEAT_TEMP, CONFIG_OVERHEAT_TEMP); }
     inline uint16_t getInfluxPort() { return nvs_config_get_u16(NVS_CONFIG_INFLUX_PORT, CONFIG_INFLUX_PORT); }
     inline uint16_t getTempControlMode() { return nvs_config_get_u16(NVS_CONFIG_AUTO_FAN_SPEED, CONFIG_AUTO_FAN_SPEED_VALUE); }
+    inline uint16_t getThrottleTemp() { return nvs_config_get_u16(NVS_CONFIG_THROTTLE_TEMP, 65); }
     inline uint16_t getPoolMode() { return nvs_config_get_u16(NVS_CONFIG_POOL_MODE, 0); }
     inline uint16_t getPoolBalance() { return nvs_config_get_u16(NVS_CONFIG_POOL_MODE_BALANCE, 50); }
 
@@ -157,6 +160,7 @@ namespace Config {
     inline void setOverheatTemp(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_OVERHEAT_TEMP, value); }
     inline void setInfluxPort(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_INFLUX_PORT, value); }
     inline void setTempControlMode(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_AUTO_FAN_SPEED, value); }
+    inline void setThrottleTemp(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_THROTTLE_TEMP, value); }
     inline void setPoolMode(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_POOL_MODE, value); }
     inline void setPoolBalance(uint16_t value) { nvs_config_set_u16(NVS_CONFIG_POOL_MODE_BALANCE, value); }
 
@@ -190,6 +194,7 @@ namespace Config {
     inline bool isStratumTLS() { return nvs_config_get_u16(NVS_CONFIG_STRATUM_TLS, CONFIG_STRATUM_TLS_VALUE) != 0; }
     inline bool isStratumFallbackTLS() { return nvs_config_get_u16(NVS_CONFIG_STRATUM_FALLBACK_TLS, CONFIG_STRATUM_FALLBACK_TLS_VALUE) != 0; }
     inline bool isShowBlockFoundEnabled() { return nvs_config_get_u16(NVS_CONFIG_SHOW_BLOCK_FOUND_ENABLE, CONFIG_SHOW_BLOCK_FOUND_ENABLE_VALUE) != 0; }
+    inline bool isAutoThrottleEnabled() { return nvs_config_get_u16(NVS_CONFIG_THROTTLE_ENABLE, 0) != 0; }
 
     // ---- Boolean Setters ----
     inline void setFlipScreen(bool value) { nvs_config_set_u16(NVS_CONFIG_FLIP_SCREEN, value ? 1 : 0); }
@@ -207,6 +212,7 @@ namespace Config {
     inline void setStratumTLS(bool value) { nvs_config_set_u16(NVS_CONFIG_STRATUM_TLS, value ? 1 : 0); }
     inline void setStratumFallbackTLS(bool value) { nvs_config_set_u16(NVS_CONFIG_STRATUM_FALLBACK_TLS, value ? 1 : 0); }
     inline void setShowBlockFoundEnabled(bool value) { nvs_config_set_u16(NVS_CONFIG_SHOW_BLOCK_FOUND_ENABLE, value ? 1 : 0); }
+    inline void setAutoThrottleEnabled(bool value) { nvs_config_set_u16(NVS_CONFIG_THROTTLE_ENABLE, value ? 1 : 0); }
 
     // with board specific default values
     inline uint16_t getAsicFrequency(uint16_t d) { return nvs_config_get_u16(NVS_CONFIG_ASIC_FREQ, d); }

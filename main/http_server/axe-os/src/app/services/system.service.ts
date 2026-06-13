@@ -110,6 +110,10 @@ const defaultInfo: ISystemInfo = {
   boardtemp1: 30,
   boardtemp2: 40,
   overheat_temp: 70,
+  autoThrottle: false,
+  throttleTemp: 65,
+  activeFrequency: 0,
+  isThrottled: false,
   history: {
     hashrate_1m: [],
     hashrate_10m: [],

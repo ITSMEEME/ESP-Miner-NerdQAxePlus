@@ -124,6 +124,8 @@
     "TEMPERATURE_TARGET": "Température Cible",
     "TARGET_TEMP": "Temp Cible (°C)",
     "SHUTDOWN_TEMP": "Température d'Arrêt",
+    "THERMAL_THROTTLE_ENABLE": "Activer la restriction thermique dynamique",
+    "THERMAL_THROTTLE_LIMIT": "Seuil de restriction (°C)",
     "POWER_LIMIT": "Limite de Puissance",
     "HOSTNAME": "Nom d'hôte",
     "TIMEZONE": "Fuseau Horaire",
@@ -230,7 +232,13 @@
     "POOL_DIFF": "Difficulté Pool",
     "VERSION": "Version",
     "EMPTY_LIST": "Liste Vide",
-    "IP_ADDRESS": "IP"
+    "IP_ADDRESS": "IP",
+    "TOTAL_EFFICIENCY": "Efficacité Totale",
+    "EFFICIENCY": "Efficacité",
+    "FILTER_ALL": "Tous",
+    "FILTER_OFFLINE": "Hors ligne",
+    "FILTER_HOT": "Chaud",
+    "FILTER_UNDERPERFORMING": "Sous-performant"
   },
   "INFLUXDB": {
     "TITLE": "Configuration InfluxDB",

@@ -124,6 +124,8 @@
     "TEMPERATURE_TARGET": "Temperature Target",
     "TARGET_TEMP": "Target Temp (°C)",
     "SHUTDOWN_TEMP": "Shutdown Temperature",
+    "THERMAL_THROTTLE_ENABLE": "Enable Dynamic Thermal Throttling",
+    "THERMAL_THROTTLE_LIMIT": "Throttling Threshold (°C)",
     "POWER_LIMIT": "Power Limit",
     "HOSTNAME": "Hostname",
     "TIMEZONE": "Timezone",
@@ -230,7 +232,13 @@
     "POOL_DIFF": "Pool Diff",
     "VERSION": "Version",
     "EMPTY_LIST": "Empty List",
-    "IP_ADDRESS": "IP"
+    "IP_ADDRESS": "IP",
+    "TOTAL_EFFICIENCY": "Total Efficiency",
+    "EFFICIENCY": "Efficiency",
+    "FILTER_ALL": "All",
+    "FILTER_OFFLINE": "Offline",
+    "FILTER_HOT": "Hot",
+    "FILTER_UNDERPERFORMING": "Underperforming"
   },
   "INFLUXDB": {
     "TITLE": "InfluxDB Configuration",
