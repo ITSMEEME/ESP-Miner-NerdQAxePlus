@@ -374,8 +374,8 @@ export class EditComponent implements OnInit {
       window.dispatchEvent(new CustomEvent('timeFormatChanged', { detail: f.timeFormat }));
     }
     // experimentalDashboardEnabled is a client-only preference; never send to backend
-    if ('experimentalDashboardEnabled' in form) {
-      delete form.experimentalDashboardEnabled;
+    if ('experimentalDashboardEnabled' in f) {
+      delete (f as any).experimentalDashboardEnabled;
     }
 
     // Build pools[] array matching GET /api/v2/settings structure

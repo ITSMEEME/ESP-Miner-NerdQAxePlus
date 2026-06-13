@@ -64,6 +64,8 @@ export interface ISettingsV2 {
     fans: ISettingsV2Fan[];
     invertFanPolarity: number;
     pidUseMax: boolean;
+    autoThrottle?: boolean;
+    throttleTemp?: number;
 
     // Network
     hostname: string;

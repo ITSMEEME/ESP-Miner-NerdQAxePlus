@@ -1,4 +1,5 @@
 import { clamp } from './math';
+import { HOME_CFG } from '../home.cfg';
 
 export interface AxisPadCfg {
   hashrate: {
@@ -53,6 +54,63 @@ export interface ComputedAxisBounds {
   };
 }
 
+export interface HashrateSoftIncludeInputs {
+  labels: number[];
+  xMinMs: number;
+  xMaxMs: number;
+  axisPadCfg: AxisPadCfg;
+  maxTicks: number;
+  hashrateMinStepThs: number;
+  baseSeries: number[];
+  otherSeries?: Array<number[] | null | undefined>;
+  liveRefHs?: number;
+  softIncludeRel?: number;
+  /** Optionally reuse precomputed base bounds to avoid double work. */
+  baseBounds?: ComputedAxisBounds['y'];
+}
+
+export interface HashrateSeriesSet {
+  hr1m: number[];
+  hr10m: number[];
+  hr1h: number[];
+  hr1d: number[];
+}
+
+export interface HashrateVisibility {
+  hr1m: boolean;
+  hr10m: boolean;
+  hr1h: boolean;
+  hr1d: boolean;
+}
+
+export interface HomeChartScaleInputs {
+  labels: number[];
+  xMinMs: number;
+  xMaxMs: number;
+  series: HashrateSeriesSet & { vregTemp: number[]; asicTemp: number[] };
+  visibility: HashrateVisibility;
+  axisPadCfg: AxisPadCfg;
+  maxTicks: number;
+  hashrateMinStepThs: number;
+  tempMinStepC: number;
+  liveRefHs?: number;
+  softIncludeRel?: number;
+  axisMinPadC?: number;
+  axisMaxPadC?: number;
+  tempHysteresisC?: number;
+  prevTempMin?: number | null;
+  prevTempMax?: number | null;
+}
+export interface TempBoundsInputs {
+  labels: number[];
+  vregTemp?: number[] | null;
+  asicTemp?: number[] | null;
+  xMinMs: number;
+  xMaxMs: number;
+  maxTicks: number;
+  axisMinPadC?: number;
+  axisMaxPadC?: number;
+}
 /**
  * Compute a width X window.
  *
@@ -206,38 +264,253 @@ export function computeAxisBounds(input: AxisScaleInputs): ComputedAxisBounds {
 
   // Temperature axis
   if (tm.mn !== undefined && tm.mx !== undefined) {
-    // Temps cannot be negative; clamp min to 0 to avoid whitespace artifacts.
-    const targetMin = Math.max(0, tm.mn - 2);
-    const targetMax = tm.mx + 3;
+    // We intentionally keep temperature bounds *strict* so the pills match the
+    // intended padding: bottom <= -2°C and top <= +3°C relative to data.
+    //
+    // Previously we aligned to a "nice" tick step (e.g. 5°C) via floor/ceil.
+    // That can push the max well beyond +3°C (e.g. 61°C -> 65°C), which makes
+    // the top padding look wrong.
+    const padMin = Number(HOME_CFG.tempScale.axisMinPadC ?? 1);
+    const padMax = Number(HOME_CFG.tempScale.axisMaxPadC ?? 2);
+    const targetMin = Math.max(0, tm.mn - padMin);
+    const targetMax = tm.mx + padMax;
 
     const maxTicks = Math.max(2, Math.round(Number(input.maxTicks || 7)));
-    const rangeC = Math.max(0, targetMax - targetMin);
-    const desired = rangeC / Math.max(1, maxTicks - 1);
-
-    const niceStepsC = [0.5, 1, 2, 5, 10];
-    let stepC = niceStepsC[niceStepsC.length - 1];
-    for (const s of niceStepsC) {
-      if (s >= desired) {
-        stepC = s;
-        break;
-      }
-    }
-    if (stepC < input.tempMinStepC) stepC = input.tempMinStepC;
-
-    let minAligned = Math.floor(targetMin / stepC) * stepC;
-    const maxAligned = Math.ceil(targetMax / stepC) * stepC;
-
-    minAligned = Math.max(0, minAligned);
 
     out.y_temp = {
-      min: minAligned,
-      max: maxAligned,
-      stepSize: stepC,
+      min: targetMin,
+      max: targetMax,
       maxTicksLimit: maxTicks,
     };
   }
 
   return out;
+}
+
+export function computeTempBounds(input: TempBoundsInputs): ComputedAxisBounds['y_temp'] | undefined {
+  const { labels, xMinMs, xMaxMs } = input;
+  const { from, to } = indicesForWindow(labels, xMinMs, xMaxMs);
+
+  const tempVals: number[] = [];
+  collectWindowed(tempVals, input.vregTemp, from, to);
+  collectWindowed(tempVals, input.asicTemp, from, to);
+
+  const tm = minMax(tempVals);
+  if (tm.mn === undefined || tm.mx === undefined) return undefined;
+
+  const padMin = Number(input.axisMinPadC ?? 1);
+  const padMax = Number(input.axisMaxPadC ?? 2);
+  const targetMin = Math.max(0, tm.mn - padMin);
+  const targetMax = tm.mx + padMax;
+
+  const maxTicks = Math.max(2, Math.round(Number(input.maxTicks || 7)));
+
+  return {
+    min: targetMin,
+    max: targetMax,
+    maxTicksLimit: maxTicks,
+  };
+}
+
+/**
+ * Compute hashrate axis bounds based on a single base series and optionally
+ * soft-include other series without rescaling the entire chart.
+ */
+export function computeHashrateBoundsSoftInclude(input: HashrateSoftIncludeInputs): ComputedAxisBounds['y'] | undefined {
+  const { labels, xMinMs, xMaxMs } = input;
+  const baseBounds = input.baseBounds ?? computeAxisBounds({
+      labels,
+      hr1m: input.baseSeries,
+      hr10m: null,
+      hr1h: null,
+      hr1d: null,
+      vregTemp: null,
+      asicTemp: null,
+      xMinMs,
+      xMaxMs,
+      axisPadCfg: input.axisPadCfg,
+      maxTicks: input.maxTicks,
+      hashrateMinStepThs: input.hashrateMinStepThs,
+      tempMinStepC: 0,
+      liveRefHs: input.liveRefHs,
+    }).y;
+
+  if (!baseBounds) return undefined;
+
+  const softRel = Math.max(0, Number(input.softIncludeRel ?? 0));
+  if (!softRel || !input.otherSeries?.length || !labels.length) return baseBounds;
+
+  const range = Math.max(1, baseBounds.max - baseBounds.min);
+  const maxExpand = range * softRel;
+
+  const { from, to } = indicesForWindow(labels, xMinMs, xMaxMs);
+
+  let otherMin = Infinity;
+  let otherMax = -Infinity;
+  for (const arr of input.otherSeries) {
+    if (!arr || !arr.length) continue;
+    const end = Math.min(arr.length, to);
+    for (let i = from; i < end; i++) {
+      const v = arr[i];
+      if (!isFiniteNumber(v)) continue;
+      if (v < otherMin) otherMin = v;
+      if (v > otherMax) otherMax = v;
+    }
+  }
+
+  let min = baseBounds.min;
+  let max = baseBounds.max;
+
+  if (otherMin !== Infinity) {
+    min = Math.max(baseBounds.min - maxExpand, Math.min(baseBounds.min, otherMin));
+  }
+  if (otherMax !== -Infinity) {
+    max = Math.min(baseBounds.max + maxExpand, Math.max(baseBounds.max, otherMax));
+  }
+
+  return { ...baseBounds, min, max };
+}
+
+/**
+ * Select the base hashrate series for axis scaling.
+ * Prefer 1m if visible, otherwise fall back to the first visible long-term series.
+ */
+export function selectBaseHashrateSeries(series: HashrateSeriesSet, visibility: HashrateVisibility): number[] {
+  if (visibility.hr1m) return series.hr1m;
+  if (visibility.hr10m) return series.hr10m;
+  if (visibility.hr1h) return series.hr1h;
+  if (visibility.hr1d) return series.hr1d;
+  return series.hr1m;
+}
+
+/**
+ * Build the list of other visible hashrate series (excluding the chosen base series).
+ */
+export function collectOtherHashrateSeries(
+  series: HashrateSeriesSet,
+  visibility: HashrateVisibility,
+  base: number[]
+): Array<number[] | null | undefined> {
+  const out: Array<number[] | null | undefined> = [];
+  if (visibility.hr1m && base !== series.hr1m) out.push(series.hr1m);
+  if (visibility.hr10m && base !== series.hr10m) out.push(series.hr10m);
+  if (visibility.hr1h && base !== series.hr1h) out.push(series.hr1h);
+  if (visibility.hr1d && base !== series.hr1d) out.push(series.hr1d);
+  return out;
+}
+
+export function computeHomeChartScales(input: HomeChartScaleInputs): {
+  bounds: ComputedAxisBounds;
+  tempAxisMin?: number;
+  tempAxisMax?: number;
+} {
+  const {
+    labels,
+    xMinMs,
+    xMaxMs,
+    series,
+    visibility,
+    axisPadCfg,
+    maxTicks,
+    hashrateMinStepThs,
+    tempMinStepC,
+    liveRefHs,
+    softIncludeRel,
+    axisMinPadC,
+    axisMaxPadC,
+    tempHysteresisC,
+    prevTempMin,
+    prevTempMax,
+  } = input;
+
+  const baseHash = selectBaseHashrateSeries(series, visibility);
+
+  const bounds: ComputedAxisBounds = computeAxisBounds({
+    labels,
+    hr1m: baseHash,
+    hr10m: null,
+    hr1h: null,
+    hr1d: null,
+    vregTemp: null,
+    asicTemp: null,
+    xMinMs,
+    xMaxMs,
+    axisPadCfg,
+    maxTicks,
+    hashrateMinStepThs,
+    tempMinStepC,
+    liveRefHs,
+  });
+
+  if (bounds.y && labels.length) {
+    const otherSeries = collectOtherHashrateSeries(series, visibility, baseHash);
+    const softY = computeHashrateBoundsSoftInclude({
+      labels,
+      xMinMs,
+      xMaxMs,
+      axisPadCfg,
+      maxTicks,
+      hashrateMinStepThs,
+      baseSeries: baseHash,
+      otherSeries,
+      liveRefHs,
+      softIncludeRel,
+      baseBounds: bounds.y,
+    });
+    if (softY) bounds.y = softY;
+  }
+
+  bounds.y_temp = computeTempBounds({
+    labels,
+    vregTemp: series.vregTemp,
+    asicTemp: series.asicTemp,
+    xMinMs,
+    xMaxMs,
+    maxTicks,
+    axisMinPadC,
+    axisMaxPadC,
+  });
+
+  // Sticky temp axis with hysteresis:
+  // - expand immediately when new data exceeds current bounds
+  // - contract gradually when data relaxes, so the chart stays calm
+  let tempAxisMin: number | undefined;
+  let tempAxisMax: number | undefined;
+  if (bounds.y_temp) {
+    const hysteresis = Math.max(0, Number(tempHysteresisC ?? 0));
+    let min = bounds.y_temp.min;
+    let max = bounds.y_temp.max;
+
+    if (Number.isFinite(prevTempMin as any) && Number.isFinite(prevTempMax as any)) {
+      const prevMin = Number(prevTempMin);
+      const prevMax = Number(prevTempMax);
+
+      // Lower bound:
+      // - move down immediately if needed (expand)
+      // - move up at most by hysteresis per update (contract)
+      if (min > prevMin + hysteresis) {
+        min = Math.min(min, prevMin + hysteresis);
+      } else {
+        min = min < prevMin - hysteresis ? min : prevMin;
+      }
+
+      // Upper bound:
+      // - move up immediately if needed (expand)
+      // - move down at most by hysteresis per update (contract)
+      if (max < prevMax - hysteresis) {
+        max = Math.max(max, prevMax - hysteresis);
+      } else {
+        max = max > prevMax + hysteresis ? max : prevMax;
+      }
+    }
+
+    bounds.y_temp.min = min;
+    bounds.y_temp.max = max;
+    tempAxisMin = min;
+    tempAxisMax = max;
+  }
+
+  return { bounds, tempAxisMin, tempAxisMax };
 }
 
 export function applyAxisBoundsToChartOptions(chartOptions: any, bounds: ComputedAxisBounds): void {

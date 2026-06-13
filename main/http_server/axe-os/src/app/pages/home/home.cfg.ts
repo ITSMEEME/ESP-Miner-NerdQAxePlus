@@ -1,9 +1,8 @@
 /**
- * Central config for the *Experimental* dashboard.
+ * Central config for the Home dashboard.
  *
- * This config is intentionally scoped to the experimental dashboard implementation.
- * The decision "legacy vs experimental" is controlled by the UI settings via
- * ExperimentalDashboardService.enabled$ (HomeShellComponent) — not from this file.
+ * This config is scoped to the current Home implementation
+ * (`home.component.*`).
  */
 
 import type { HomeChartViewMode } from './chart/home.chart-state';
@@ -177,6 +176,20 @@ export interface Hashrate1mSmoothingCfg {
    * (clamped internally to available points)
    */
   medianWindowPoints: number;
+  /** Extra tension to add per zoom step (visual-only). */
+  zoomBoostPerStep: number;
+  /**
+   * EMA smoothing window target in ms (converted to points via median interval).
+   * These values are only used when zoomed out (per zoom step).
+   */
+  emaWindowMsMin: number;
+  emaWindowMsMax: number;
+  emaWindowMsPerStep: number;
+  /** Clamp the EMA window (in points) after conversion. */
+  emaMinPoints: number;
+  emaMaxPoints: number;
+  /** Ensure the last point stays precise (reduces perceived lag). */
+  snapLastPoint: boolean;
 }
 
 
@@ -187,17 +200,23 @@ export interface Hashrate1mSmoothingCfg {
  */
 export interface TempScaleCfg {
   /**
-   * Pads min/max around the latest window by +/- this many °C.
-   * (used when you want a stable, readable temp scale)
+   * Minimum delta (°C) required before we update the temp axis bounds.
+   * This creates a small deadband so the chart doesn't "jump" on tiny changes.
    */
-  latestPadC: number;
+  hysteresisC?: number;
+  /**
+   * Padding applied to temperature axis bounds (adaptive scaling).
+   * Example: axisMinPadC=1, axisMaxPadC=2 => min = mn - 1, max = mx + 2.
+   */
+  axisMinPadC?: number;
+  axisMaxPadC?: number;
 }
 
 
 // ---- Storage
 
 /**
- * Central place for localStorage keys used by the experimental chart.
+ * Central place for localStorage keys used by the Home chart.
  *
  */
 export interface HomeStorageKeys {
@@ -206,6 +225,8 @@ export interface HomeStorageKeys {
   legendVisibility: string;
   viewMode: string;
   minHistoryTimestampMs: string;
+  /** Visual-only collapse state for the Home chart container. */
+  chartCollapsed: string;
 }
 
 /**
@@ -216,6 +237,93 @@ export interface HomeUiDefaults {
   legendHidden: HomeLegendHiddenDefaults;
 }
 
+
+
+// ---- Tile / bar / square helpers (Home dashboard)
+
+/**
+ * Uptime formatting rules used in the Hashrate tile.
+ * Kept in config so we can tweak unit cutoffs without touching component code.
+ */
+export interface UptimeFormatCfg {
+  minutesInHour: number;
+  minutesInDay: number;
+  minutesInWeek: number;
+  minutesInMonth: number;
+  /** If true, always include minutes (even when days/weeks are shown). */
+  alwaysShowMinutes: boolean;
+  /** If true, always include seconds (even when hours/days are shown). */
+  alwaysShowSeconds: boolean;
+}
+
+/**
+ * Key/limit mapping used to provide stable aliases for the "Input current" power bar.
+ * The backend has seen multiple shapes over firmware versions.
+ */
+export interface PowerUsageAliasCfg {
+  /** Values above this are treated as mA and converted to A. */
+  milliAmpThreshold: number;
+  /** Fallback max current (A) if nothing can be derived. */
+  fallbackMaxA: number;
+  /** If max <= min, expand range by this many A. */
+  minRangeA: number;
+
+  /** Candidate keys for min current (first finite wins). */
+  minKeys: string[];
+  /** Candidate keys for max current (first finite wins). */
+  maxKeys: string[];
+}
+
+/**
+ * DOM override helper config.
+ * We keep selectors + theme heuristics here so the component stays a thin container.
+ */
+export interface BarDomSyncCfg {
+  /** Query selector for power bars inside the Power Usage tile. */
+  powerBarSelector: string;
+  /** The unit text that identifies the Input Current bar (e.g. 'A'). */
+  currentInputUnit: string;
+
+  /** Query selector for the VR temp bar element. */
+  vrTempBarSelector: string;
+  /** Query selector for a bar's fill element. */
+  fillSelector: string;
+  /** Query selector for a bar's label element. */
+  labelSelector: string;
+  /** Query selector for a bar's value element. */
+  valueSelector: string;
+
+  /** Theme-name hints to detect light/dark without hard dependencies. */
+  lightThemeHints: string[];
+  darkThemeHints: string[];
+}
+
+export interface HomeTilesCfg {
+  uptime: UptimeFormatCfg;
+  powerUsageAliases: PowerUsageAliasCfg;
+  domSync: BarDomSyncCfg;
+
+  /** Visual-only thresholds for the Input Current (A) bar. */
+  inputCurrent: {
+    lowMaxAThreshold?: number;
+    lowWarnRel?: number;
+    lowCritRel?: number;
+    warnRel: number;
+    critRel: number;
+  };
+
+  /** Visual-only normal band for Input Voltage (V). */
+  inputVoltageBand: {
+    low: number;
+    high: number;
+  };
+
+  /** Voltage regulator temperature thresholds in °C (absolute). */
+  vrTempBand: {
+    warnC: number;
+    critC: number;
+  };
+}
 export interface HomeCfg {
   storage: {
     keys: HomeStorageKeys;
@@ -223,6 +331,7 @@ export interface HomeCfg {
     maxPersistedPoints: number;
   };
   uiDefaults: HomeUiDefaults;
+  tiles: HomeTilesCfg;
   axisPadding: AxisPaddingCfg;
   /**
    * Implement X-axis viewport size in milliseconds.
@@ -250,6 +359,12 @@ export interface HomeCfg {
 
   xAxis: {
     fixedWindowMs: number;
+    /** Minimum zoom window (ms). */
+    minWindowMs: number;
+    /** Maximum zoom window (ms). */
+    maxWindowMs: number;
+    /** Zoom step (ms). */
+    zoomStepMs: number;
     /** Tick spacing for the time axis (ms). Used for deterministic 15m labels/grid. */
     tickStepMs: number;
   };
@@ -257,6 +372,8 @@ export interface HomeCfg {
     hashrateMaxTicksDefault: number;
     hashrateTickCountClamp: TickCountClamp;
     minTickSteps: MinTickSteps;
+    /** Max relative expansion to keep other hashrate series visible without rescaling. */
+    hashrateSoftIncludeRel: number;
   };
   graphGuard: GraphGuardTuning;
   historyDrain: HistoryDrainCfg;
@@ -270,7 +387,7 @@ export interface HomeCfg {
   /**
    * Warmup/Restart sequencing so graphs don't "fall apart" after miner restarts.
    *
-   * This is used by HomeExperimentalComponent + home.warmup.ts.
+   * This is used by HomeComponent + home.warmup.ts.
    */
   warmup: {
     /** Minimum plausible temperature that counts as "valid" for warmup gating. */
@@ -348,14 +465,14 @@ export function createAxisPaddingCfg(): AxisPaddingCfg {
 export const HOME_CFG: HomeCfg = {
   storage: {
     keys: {
-      // Keep the existing keys used by the experimental dashboard so upgrades
-      // do not silently drop persisted state.
-      chartData: 'chartData_exp',
-      lastTimestamp: 'lastTimestamp_exp',
-      legendVisibility: 'chartLegendVisibility_exp',
-      // Historical name was tempViewMode_exp; we call it viewMode in code.
-      viewMode: 'tempViewMode_exp',
-      minHistoryTimestampMs: 'minHistoryTimestampMs_exp',
+      // Active Home keys.
+      chartData: 'chartData_home',
+      lastTimestamp: 'lastTimestamp_home',
+      legendVisibility: 'chartLegendVisibility_home',
+      viewMode: 'tempViewMode_home',
+      minHistoryTimestampMs: 'minHistoryTimestampMs_home',
+      // Visual-only: remember if the user collapsed the chart container.
+      chartCollapsed: 'chartCollapsed_home',
     },
     // Keep storage reasonably bounded; chart can still hold more live points.
     maxPersistedPoints: 20000,
@@ -371,6 +488,85 @@ export const HOME_CFG: HomeCfg = {
       hr1h: true,
       hr1d: true,
     },
+  },
+
+  tiles: {
+    uptime: {
+      minutesInHour: 60,
+      minutesInDay: 24 * 60,
+      minutesInWeek: 7 * 24 * 60,
+      // coarse month approximation (matches previous logic)
+      minutesInMonth: 30 * 24 * 60,
+      alwaysShowMinutes: true,
+      alwaysShowSeconds: false,
+    },
+
+    powerUsageAliases: {
+      milliAmpThreshold: 1000,
+      fallbackMaxA: 6,
+      minRangeA: 6,
+      minKeys: [
+        'minCurrentA',
+        'minCurrent',
+        'currentMin',
+        'inputCurrentMin',
+        'iinMin',
+      ],
+      maxKeys: [
+        'maxCurrentA',
+        'maxCurrent',
+        'currentMax',
+        'inputCurrentMax',
+        'iinMax',
+        'inputCurrentLimit',
+        'currentLimit',
+        'iinLimit',
+      ],
+    },
+
+    domSync: {
+      powerBarSelector: '.power-usage-box .power-bars .power-bar',
+      currentInputUnit: 'A',
+      vrTempBarSelector: '.power-bar[data-bar="vr-temp"]',
+      fillSelector: '.power-bar__fill',
+      labelSelector: '.power-bar__label',
+      valueSelector: '.power-bar__value',
+      lightThemeHints: ['default', 'corporate', 'light'],
+      darkThemeHints: ['dark', 'cosmic'],
+    },
+
+    /**
+     * Input current (A) bar rendering thresholds (visual-only).
+     *
+     * - < warnRel: normal grey fill
+     * - >= warnRel and <= critRel: grey->yellow gradient
+     * - > critRel: solid ASIC-temp-pill red with white text
+     */
+    inputCurrent: {
+      /** If maxCurrentA is below this, use the "low" warn/crit ratios. */
+      lowMaxAThreshold: 8,
+      /** Warn ratio for devices below lowMaxAThreshold (e.g. <=8A). */
+      lowWarnRel: 0.98,
+      /** Crit ratio for devices below lowMaxAThreshold (e.g. <=8A). */
+      lowCritRel: 0.99,
+      warnRel: 0.96,
+      critRel: 0.99,
+    },
+
+    /**
+     * Input voltage (V) "normal" band.
+     * Outside this band we show a grey->yellow gradient (visual-only).
+     */
+    inputVoltageBand: {
+      low: 11.5,
+      high: 12.6,
+    },
+    /** Voltage regulator temperature thresholds (°C). */
+    vrTempBand: {
+      warnC: 94,
+      critC: 115,
+    },
+
   },
 
   axisPadding: {
@@ -403,6 +599,10 @@ export const HOME_CFG: HomeCfg = {
   xAxis: {
     // Keep X viewport stable and visually calm: always show a full hour.
     fixedWindowMs: 60 * 60 * 1000,
+    // Zoom limits: 1h .. 3h, 15m step.
+    minWindowMs: 60 * 60 * 1000,
+    maxWindowMs: 3 * 60 * 60 * 1000,
+    zoomStepMs: 15 * 60 * 1000,
 
     // Deterministic time-axis ticks / grid (e.g. 15-minute labels: :00, :15, :30, :45)
     tickStepMs: 15 * 60 * 1000,
@@ -418,6 +618,7 @@ export const HOME_CFG: HomeCfg = {
       hashrateMinStepThs: 0.005,
       tempMinStepC: 2,
     },
+    hashrateSoftIncludeRel: 0.05,
   },
 
   graphGuard: {
@@ -457,18 +658,30 @@ export const HOME_CFG: HomeCfg = {
       enabled: true,
       fastIntervalMs: 6000,
       mediumIntervalMs: 12000,
-      tensionFast: 0.60,
-      tensionMedium: 0.25,
-      tensionSlow: 0.20,
+      tensionFast: 0.45,
+      tensionMedium: 0.18,
+      tensionSlow: 0.12,
       cubicInterpolationMode: 'monotone',
       // Previously effectively 60 in applyHashrate1mSmoothing
       medianWindowPoints: 60,
+      // Add a little smoothing as the user zooms out (15m steps).
+      zoomBoostPerStep: 0.08,
+      // EMA smoothing (time-based, converted to points)
+      emaWindowMsMin: 0,
+      emaWindowMsMax: 180000, // 3 min max smoothing at far zoom
+      emaWindowMsPerStep: 20000, // +20s per zoom step
+      emaMinPoints: 2,
+      emaMaxPoints: 120,
+      snapLastPoint: true,
     },
   },
 
   tempScale: {
-    // Previously hardcoded as +/- 3°C around latest min/max.
-    latestPadC: 3,
+    // Keep temp axis stable unless it needs to move by >= 1°C.
+    hysteresisC: 1,
+    // Adaptive temp axis padding (bottom / top).
+    axisMinPadC: 1,
+    axisMaxPadC: 2,
   },
 
   warmup: {

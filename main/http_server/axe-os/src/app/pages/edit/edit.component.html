@@ -397,7 +397,6 @@
         <nb-card>
             <nb-card-header>{{ 'FAN.TITLE' | translate }}</nb-card-header>
             <nb-card-body>
-                <div>
                     <div class="fan-column">
                         <h6 class="fan-column__title">{{ 'FAN.PRIMARY_CONTROLLER' | translate }}</h6>
 
@@ -421,8 +420,7 @@
                                 </nb-select>
                             </div>
                         </div>
-                    </div>
-                </div>
+
 
                         <!-- Manual fan speed slider -->
                         <div *ngIf="form.controls['autofanspeed'].value === 0">
@@ -482,7 +480,6 @@
                                 <input nbInput id="overheat_temp" formControlName="overheat_temp" type="number" />
                             </div>
                         </div>
-
                         <!-- Dynamic Thermal Throttling Setup -->
                         <div class="form-row mt-2">
                             <nb-checkbox formControlName="autoThrottle">{{ 'SETTINGS.THERMAL_THROTTLE_ENABLE' | translate }}</nb-checkbox>
@@ -596,18 +593,15 @@
                             <div class="form-control-wrapper">
                                 <input nbInput id="fan1OverheatTemp2" formControlName="fan1OverheatTemp" type="number" />
                             </div>
-                        </div>
-
+        
                     </div>
-                </div>
+                    </div>
             </nb-card-body>
         </nb-card>
         <nb-card>
             <nb-card-header>{{ 'MISC.TITLE' | translate }}</nb-card-header>
             <nb-card-body>
-                <div class="form-row">
-                  <nb-checkbox formControlName="experimentalDashboardEnabled">Use EXPERIMENTAL Dashboard</nb-checkbox>
-                </div>
+
                 <div class="form-row" *ngIf="hasCanExtension">
                     <nb-checkbox formControlName="canMaster">CAN Master Mode</nb-checkbox>
                 </div>

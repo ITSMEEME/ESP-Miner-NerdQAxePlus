@@ -17,6 +17,9 @@ export interface CreateSystemInfoPollingDeps<T = any> {
   /** Chunk size passed to the backend (0 = unlimited) */
   chunkSize: number;
 
+  /** Max history window in milliseconds (used to cap start timestamp). */
+  historyWindowMs?: number;
+
   /** Fetch fresh system info starting at a given timestamp (ms). */
   fetchInfo: (startTimestampMs: number, chunkSize: number) => Observable<T>;
 
@@ -43,7 +46,7 @@ export interface CreateSystemInfoPollingDeps<T = any> {
 }
 
 /**
- * Creates the polling pipeline used by HomeExperimentalComponent.
+ * Creates the polling pipeline used by HomeComponent.
  *
  * - polls every `pollMs`
  * - computes a startTimestamp (lastTimestamp+1, capped to 1h window)
@@ -71,11 +74,12 @@ export function createSystemInfoPolling$<T = any>(deps: CreateSystemInfoPollingD
       }
 
       const now = Date.now();
-      const oneHourAgo = now - 3600 * 1000;
-      // Cap the startTimestamp to be at most one hour ago
+      const windowMs = Math.max(0, Number(deps.historyWindowMs || 3600 * 1000));
+      const minWindowAgo = now - windowMs;
+      // Cap the startTimestamp to be at most the window (default 1h)
       const startTimestamp = storedLastTimestamp
-        ? Math.max(storedLastTimestamp + 1, oneHourAgo)
-        : oneHourAgo;
+        ? Math.max(storedLastTimestamp + 1, minWindowAgo)
+        : minWindowAgo;
 
       return deps.fetchInfo(startTimestamp, deps.chunkSize).pipe(
         catchError((err) => {

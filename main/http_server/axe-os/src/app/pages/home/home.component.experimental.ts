@@ -39,8 +39,8 @@ import {
 } from './home.quicklinks';
 @Component({
   selector: 'app-home-experimental',
-  templateUrl: './home.component.html',
-  styleUrls: ['./home.component.scss']
+  templateUrl: './home.component.experimental.html',
+  styleUrls: ['./home.component.experimental.scss']
 })
 
 export class HomeExperimentalComponent implements AfterViewChecked, OnInit, OnDestroy {
@@ -1418,7 +1418,7 @@ private updateTempScaleFromLatest(): void {
   const minLast = Math.min(...vals);
   const maxLast = Math.max(...vals);
 
-  const pad = HOME_CFG.tempScale.latestPadC;
+  const pad = HOME_CFG.tempScale.axisMaxPadC || 5;
   const min = Math.max(0, Math.floor(minLast - pad));
   const max = Math.ceil(maxLast + pad);
 
