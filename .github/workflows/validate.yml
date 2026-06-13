@@ -28,9 +28,16 @@ jobs:
             label: NerdEKO
           - board: NERDQX
             label: NerdQX
+          - board: Q1370
+            label: Q1370
+          - board: Q1373
+            label: Q1373
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        submodules: recursive
 
     - name: Set Target for ${{ matrix.label }}
       run: |

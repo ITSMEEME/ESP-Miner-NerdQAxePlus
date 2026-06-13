@@ -39,4 +39,5 @@ components/components/*
 config.bin
 config.cvs
 managed_components/*
-monitoring/data/
+release/
+esp-miner-*.bin

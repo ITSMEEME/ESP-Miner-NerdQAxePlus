@@ -1,91 +1,97 @@
 import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { delay, Observable, of } from 'rxjs';
+import { Observable } from 'rxjs';
 import { eASICModel } from '../models/enum/eASICModel';
 import { ISystemInfo } from '../models/ISystemInfo';
+import { IDashboardV2 } from '../models/IDashboardV2';
 import { IHistory } from '../models/IHistory';
 import { IAlertSettings } from '../models/IAlertSettings';
 import { AsicInfo } from '../models/IAsicInfo';
+import { ISettingsV2 } from '../models/ISettingsV2';
+import { IIdentifyV2 } from '../models/IIdentifyV2';
+import { ISystemV2 } from '../models/ISystemV2';
 import { environment } from '../../environments/environment';
 import { IInfluxDB } from '../models/IInfluxDB';
 import { IUpdateStatus } from '../models/IUpdateStatus';
 import { HttpHeaders } from '@angular/common/http';
 
 const defaultInfo: ISystemInfo = {
-  power: 11.670000076293945,
-  minPower: 5.0,
-  maxPower: 15.0,
-  voltage: 5208.75,
-  maxVoltage: 4.5,
-  minVoltage: 5.5,
-  current: 2237.5,
-  currentA: 0,
-  minCurrentA: 0.0,
-  maxCurrentA: 6.0,
-  temp: 60,
-  vrTemp: 45,
-  hashRateTimestamp: 1724398272483,
-  hashRate: 475,
-  hashRate_10m: 475,
-  hashRate_1h: 475,
-  hashRate_1d: 475,
+  flipscreen: 0,
+  invertscreen: 0,
+  autoscreenoff: 0,
+  power: 0,
+  minPower: 0,
+  maxPower: 0,
+  voltage: 0,
+  maxVoltage: 0,
+  minVoltage: 0,
+  current: 0,
+  temp: 0,
+  vrTemp: 0,
+  vrTempInt: 0,
+  hashRateTimestamp: 0,
+  hashRate: 0,
+  hashRate_10m: 0,
+  hashRate_1h: 0,
+  hashRate_1d: 0,
   bestDiff: 0,
   bestSessionDiff: 0,
-  freeHeap: 8388608,
-  freeHeapInt: 102400,
-  coreVoltage: 1200,
-  defaultCoreVoltage: 1200,
-  coreVoltageActual: 1200,
-  hostname: "Bitaxe",
-  hostip: "192.168.0.123",
-  macAddr: "DE:AD:C0:DE:0B:7C",
-  wifiRSSI: -90,
-  ssid: "default",
-  wifiPass: "password",
-  wifiStatus: "SYSTEM.WIFI_CONNECTED",
-  sharesAccepted: 1,
+  freeHeap: 0,
+  freeHeapInt: 0,
+  coreVoltage: 0,
+  defaultCoreVoltage: 0,
+  coreVoltageActual: 0,
+  hostname: "",
+  hostip: "",
+  macAddr: "",
+  wifiRSSI: 0,
+  ssid: "",
+  wifiPass: "",
+  wifiStatus: "",
+  sharesAccepted: 0,
   sharesRejected: 0,
-  uptimeSeconds: 38,
-  asicCount: 1,
-  smallCoreCount: 672,
+  uptimeSeconds: 0,
+  asicCount: 0,
+  smallCoreCount: 0,
   ASICModel: eASICModel.BM1368,
-  deviceModel: "NerdQAxe+",
-  stratumURL: "public-pool.io",
-  stratumPort: 3333,
-  stratumUser: "bc1q99n3pu025yyu0jlywpmwzalyhm36tg5u37w20d.bitaxe-U1",
+  deviceModel: "",
+  stratumURL: "",
+  stratumPort: 0,
+  stratumUser: "",
   stratumEnonceSubscribe: 0,
   stratumTLS: 0,
   fallbackStratumURL: "",
-  fallbackStratumPort: 3333,
+  fallbackStratumPort: 0,
   fallbackStratumUser: "",
   fallbackStratumEnonceSubscribe: 0,
   fallbackStratumTLS: 0,
-  frequency: 485,
-  defaultFrequency: 485,
-  version: "2.0",
-  flipscreen: 0,
-  invertscreen: 0,
+  stratumProtocol: 0,
+  fallbackStratumProtocol: 0,
+  sv2AuthorityPubkey: "",
+  fallbackSv2AuthorityPubkey: "",
+  sv2ChannelType: 0,
+  fallbackSv2ChannelType: 0,
+  frequency: 0,
+  defaultFrequency: 0,
+  version: "",
   invertfanpolarity: 0,
-  autofanspeed: 1,
-  fanspeed: 100,
-  manualFanSpeed: 100,
+  autofanspeed: 0,
+  fanspeed: 0,
+  manualFanSpeed: 0,
   fanrpm: 0,
-  autoscreenoff: 0,
-  lastResetReason: "Unknown",
-  jobInterval: 1200,
-  stratumDifficulty: 1000,
-  lastpingrtt: 0.00,
-  recentpingloss: 0.00,
+  lastResetReason: "",
+  jobInterval: 0,
+  stratumDifficulty: 0,
+  lastpingrtt: 0,
+  recentpingloss: 0,
   poolDifficulty: 0,
   stratum_keep: 0,
-  vrFrequency: 25000,
-  defaultTheme: "cosmic",
+  vrFrequency: 0,
+  defaultTheme: "",
   shutdown: false,
-
   stratum: {
-    poolMode: 0, // prim/fb
+    poolMode: 0,
     activePoolMode: 0,
-    //poolBalance: 100,
     usingFallback: false,
     totalBestDiff: 0,
     pools: [{
@@ -97,19 +103,18 @@ const defaultInfo: ISystemInfo = {
       bestDiff: 0,
       pingRtt: 0,
       pingLoss: 0,
+      activeProtocol: 0,
+      encrypted: false,
     }],
   },
-
   otp: false,
-
-  pidTargetTemp: 55,
-  pidP: 2.0,
-  pidI: 0.1,
-  pidD: 5.0,
-
-  boardtemp1: 30,
-  boardtemp2: 40,
-  overheat_temp: 70,
+  pidTargetTemp: 0,
+  pidP: 0,
+  pidI: 0,
+  pidD: 0,
+  boardtemp1: 0,
+  boardtemp2: 0,
+  overheat_temp: 0,
   autoThrottle: false,
   throttleTemp: 65,
   activeFrequency: 0,
@@ -154,6 +159,19 @@ export class SystemService {
     return defaultInfo;
   }
 
+  static defaultDashboardV2(): IDashboardV2 {
+    return {
+      system:      { uptime: 0, shutdown: false, boardError: 0, overheatTemp: 0 },
+      performance: { hashRateTimestamp: 0, hashRate: 0, hashRate1m: 0, hashRate10m: 0, hashRate1h: 0, hashRate1d: 0, bestDiff: 0, bestSessionDiff: 0, sharesAccepted: 0, sharesRejected: 0, frequency: 0, asicCount: 0, smallCoreCount: 0 },
+      power:       { watts: 0, min: 0, max: 0, voltage: 0, voltageMin: 0, voltageMax: 0, currentA: 0, currentAMin: 0, currentAMax: 0, coreVoltageActual: 0 },
+      thermal:     { asicTemp: 0, vrTemp: 0, vrTempInt: 0, asicTemps: [], fans: [{ speed: 0, rpm: 0 }] },
+      stratum:     { poolMode: 0, activePoolMode: 0, usingFallback: false, totalBestDiff: 0, poolBalance: 0, pools: [{ host: '', port: 0, user: '', connected: false, activeProtocol: 0, encrypted: false, accepted: 0, rejected: 0, bestDiff: 0, pingRtt: 0, pingLoss: 0, poolDifficulty: 0 }] },
+      can:         { hasExtension: false, enabled: false },
+      coinbase:    { blockHeaders: [], pools: [] },
+      history:     { hashrate_1m: [], hashrate_10m: [], hashrate_1h: [], hashrate_1d: [], vregTemp: [], asicTemp: [], hasMore: false, timestamps: [], timestampBase: 0 },
+    };
+  }
+
   public getInfo(ts = 0, limit = 0, uri = ''): Observable<ISystemInfo> {
     let params = new HttpParams();
 
@@ -170,12 +188,64 @@ export class SystemService {
     return this.httpClient.get<ISystemInfo>(endpoint, { params });
   }
 
+  // Home dashboard: request an extended history window (span) without affecting other callers.
+  public getInfoWithSpan(ts = 0, limit = 0, spanMs = 0, uri = ''): Observable<ISystemInfo> {
+    let params = new HttpParams();
+
+    if (ts > 0) {
+      params = params
+        .set('ts', ts)
+        .set('cur', Date.now());
+
+      if (limit > 0) {
+        params = params.set('limit', limit);
+      }
+      if (spanMs > 0) {
+        params = params.set('history_span', spanMs);
+      }
+    }
+    const endpoint = `${uri}/api/system/info`;
+    return this.httpClient.get<ISystemInfo>(endpoint, { params });
+  }
+
+  // Home dashboard v2: fetches /api/v2/dashboard and returns IDashboardV2 directly.
+  public getDashboardV2WithSpan(ts = 0, limit = 0, spanMs = 0): Observable<IDashboardV2> {
+    let params = new HttpParams();
+    if (ts > 0) {
+      params = params.set('ts', ts).set('cur', Date.now());
+      if (limit > 0) params = params.set('limit', limit);
+      if (spanMs > 0) params = params.set('historySpan', spanMs);
+    }
+    return this.httpClient.get<IDashboardV2>('/api/v2/dashboard', { params });
+  }
   public getAsicInfo(uri: string = ''): Observable<AsicInfo> {
     return this.httpClient.get<AsicInfo>(`${uri}/api/system/asic`);
   }
 
+  public getSettingsV2(uri: string = ''): Observable<ISettingsV2> {
+    return this.httpClient.get<ISettingsV2>(`${uri}/api/v2/settings`);
+  }
+
+  public updateSettingsV2(uri: string = '', update: any, totp?: string) {
+    let headers = new HttpHeaders();
+    if (totp) headers = headers.set('X-TOTP', totp);
+    return this.httpClient.patch(`${uri}/api/v2/settings`, update, { headers });
+  }
+
+  public scanWifi(): Observable<{ networks: { ssid: string; rssi: number; authmode: number }[] }> {
+    return this.httpClient.get<{ networks: { ssid: string; rssi: number; authmode: number }[] }>('/api/v2/wifi/scan');
+  }
+
+  public getIdentifyV2(uri: string = ''): Observable<IIdentifyV2> {
+    return this.httpClient.get<IIdentifyV2>(`${uri}/api/v2/identify`);
+  }
+
+  public getSystemV2(): Observable<ISystemV2> {
+    return this.httpClient.get<ISystemV2>(`/api/v2/system`);
+  }
+
   public getInfluxInfo(uri: string = ''): Observable<IInfluxDB> {
-    return this.httpClient.get(`${uri}/api/influx/info`) as Observable<IInfluxDB>;
+    return this.httpClient.get(`${uri}/api/v2/influx`) as Observable<IInfluxDB>;
   }
 
   public getHistoryLen(): Observable<any> {
@@ -196,6 +266,10 @@ export class SystemService {
       headers,
       responseType: 'text', // plain text body
     });
+  }
+
+  public resetStats(uri: string = '') {
+    return this.httpClient.post(`${uri}/api/system/reset-stats`, null, { responseType: 'text' });
   }
 
   public shutdown(uri: string = '', totp?: string) {
@@ -226,7 +300,7 @@ export class SystemService {
   public updateInflux(uri: string = '', update: any, totp?: string) {
     let headers = new HttpHeaders();
     if (totp) headers = headers.set('X-TOTP', totp);
-    return this.httpClient.patch(`${uri}/api/influx`, update, { headers });
+    return this.httpClient.patch(`${uri}/api/v2/influx`, update, { headers });
   }
 
 
@@ -270,11 +344,11 @@ export class SystemService {
   }
 
   // GitHub One-Click OTA
-  public performGithubOTAUpdate(url: string, totp?: string) {
+  public performGithubOTAUpdate(url: string, keepConfig: boolean, totp?: string) {
     const headers: Record<string, string> = {};
     if (totp) headers['X-TOTP'] = totp;
 
-    return this.httpClient.post('/api/system/OTA/github', { url }, {
+    return this.httpClient.post('/api/system/OTA/github', { url, keep_config: keepConfig }, {
       responseType: 'text',
       headers,
     });
@@ -284,30 +358,20 @@ export class SystemService {
     return this.httpClient.get('/api/system/OTA/github') as Observable<IUpdateStatus>;
   }
 
-
-  public getSwarmInfo(uri: string = ''): Observable<{ ip: string }[]> {
-    return this.httpClient.get(`${uri}/api/swarm/info`) as Observable<{ ip: string }[]>;
-  }
-
-  public updateSwarm(uri: string = '', swarmConfig: any) {
-    return this.httpClient.patch(`${uri}/api/swarm`, swarmConfig);
-  }
-
-
   public getAlertInfo(uri: string = ''): Observable<IAlertSettings> {
-    return this.httpClient.get(`${uri}/api/alert/info`) as Observable<IAlertSettings>;
+    return this.httpClient.get(`${uri}/api/v2/alert`) as Observable<IAlertSettings>;
   }
 
   // Alerts: POST /api/alert/update
   public updateAlertInfo(uri: string = '', data: IAlertSettings, totp?: string) {
     let headers = new HttpHeaders();
     if (totp) headers = headers.set('X-TOTP', totp);
-    return this.httpClient.post(`${uri}/api/alert/update`, data, { headers });
+    return this.httpClient.patch(`${uri}/api/v2/alert`, data, { headers });
   }
 
   public sendAlertTest(uri: string = '', totp?: string): Observable<any> {
-    const headers = totp ? new HttpHeaders({ 'X-OTP-Code': totp }) : undefined;
-    return this.httpClient.post(`${uri}/api/alert/test`, {}, {
+    const headers = totp ? new HttpHeaders({ 'X-TOTP': totp }) : undefined;
+    return this.httpClient.post(`${uri}/api/v2/alert/test`, {}, {
       responseType: 'text',
       headers,
     });
@@ -315,13 +379,13 @@ export class SystemService {
 
   /** POST /api/otp -> starts enrollment (shows QR on device) */
   public startOtpEnrollment(): Observable<void> {
-    return this.httpClient.post<void>('/api/otp', {}); // empty body
+    return this.httpClient.post<void>('/api/v2/otp', {}); // empty body
   }
 
   /** PATCH /api/otp -> {enabled:boolean, totp:string} */
   public updateOtp(enabled: boolean, totp: string): Observable<void> {
     const headers = new HttpHeaders().set('X-TOTP', totp);
-    return this.httpClient.patch<void>('/api/otp', { enabled }, { headers });
+    return this.httpClient.patch<void>('/api/v2/otp', { enabled }, { headers });
   }
 
   /** POST /api/otp/session - creates session token with expiration */
@@ -331,13 +395,13 @@ export class SystemService {
       headers = headers.set('X-OTP-Session-TTL', String(ttlMs));
     }
     return this.httpClient.post<{ token: string; ttlMs?: number; expiresAt?: number }>(
-      '/api/otp/session', {}, { headers }
+      '/api/v2/otp/session', {}, { headers }
     );
   }
 
   // only returns enabled flag
   public getOTPStatus(): Observable<{ enabled: boolean }> {
-    return this.httpClient.get('/api/otp/status') as Observable<{ enabled: boolean }>;
+    return this.httpClient.get('/api/v2/otp/status') as Observable<{ enabled: boolean }>;
   }
 }
 

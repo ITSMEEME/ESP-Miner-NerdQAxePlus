@@ -288,8 +288,11 @@
               <!-- ASIC Frequency -->
               <td [rowSpan]="dualPool ? 2 : 1" class="gauge-col text-center align-middle">
                 <div class="d-flex flex-column align-items-center justify-content-center">
-                  <app-gauge [value]="axe.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'" class="small-gauge mb-1"></app-gauge>
-                  <span *ngIf="axe.autoThrottle" class="badge badge-success" style="font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background-color: #28a745; color: #fff;"
+                  <app-gauge [value]="axe.activeFrequency || axe.frequency" [format]="'1.0-0'" [min]="200" [max]="1000" [unit]="'MHz'" class="small-gauge mb-1"></app-gauge>
+                  <span *ngIf="axe.isThrottled" class="badge badge-warning" style="font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background-color: #ffc107; color: #000;"
+                    [nbTooltip]="'Throttled (Limit: ' + (axe.throttleTemp || 65) + '°C)'"
+                  >throttled</span>
+                  <span *ngIf="axe.autoThrottle && !axe.isThrottled" class="badge badge-success" style="font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; background-color: #28a745; color: #fff;"
                     [nbTooltip]="'Auto-Tune (' + (axe.throttleTemp || 65) + '°C)'"
                   >AT</span>
                 </div>
@@ -380,7 +383,7 @@
       <!-- Legend -->
       <div class="d-flex flex-wrap gap-3 mt-3 text-sm justify-content-center">
         <ng-container *ngFor="let item of colorLegend">
-          <div class="legend-chip" [title]="item.label + ' (' + item.color + ') ×' + item.count">
+          <div class="legend-chip" [title]="item.label + ' ×' + item.count">
             <span class="swarm-dot" [style.background]="item.color"></span>
             <span class="legend-label">{{ item.label }}</span>
             <span class="legend-count">×{{ item.count }}</span>
