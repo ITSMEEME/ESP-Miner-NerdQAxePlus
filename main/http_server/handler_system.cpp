@@ -229,6 +229,7 @@ esp_err_t GET_system_info(httpd_req_t *req)
     doc["autoThrottle"]       = Config::isAutoThrottleEnabled();
     doc["throttleTemp"]       = Config::getThrottleTemp();
     doc["activeFrequency"]    = POWER_MANAGEMENT_MODULE.getActiveFrequency();
+    doc["activeVoltage"]      = POWER_MANAGEMENT_MODULE.getActiveVoltage();
     doc["isThrottled"]        = POWER_MANAGEMENT_MODULE.isThrottled();
     doc["flipscreen"]         = board->isFlipScreenEnabled() ? 1 : 0;
     doc["invertscreen"]       = Config::isInvertScreenEnabled() ? 1 : 0; // unused?
@@ -336,7 +337,7 @@ esp_err_t PATCH_update_settings(httpd_req_t *req)
     if (doc["overheat_temp"].is<uint16_t>()) {
         Config::setOverheatTemp(doc["overheat_temp"].as<uint16_t>());
     }
-    if (doc.containsKey("autoThrottle")) {
+    if (!doc["autoThrottle"].isNull()) {
         Config::setAutoThrottleEnabled(doc["autoThrottle"].as<bool>() || doc["autoThrottle"].as<int>() != 0);
     }
     if (doc["throttleTemp"].is<uint16_t>()) {

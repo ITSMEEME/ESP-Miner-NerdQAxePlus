@@ -1,28 +1,14 @@
-import {
-  Component,
-  AfterViewChecked,
-  OnInit,
-  OnDestroy,
-  ElementRef,
-  ViewChild,
-  HostBinding,
-  ChangeDetectorRef,
-  ChangeDetectionStrategy,
-  NgZone,
-  Renderer2 } from '@angular/core';
-import { map,
-  Observable,
-  Subscription,
-  firstValueFrom } from 'rxjs';
+import { Component, AfterViewChecked, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { map, Observable, Subscription, firstValueFrom } from 'rxjs';
 import { HashSuffixPipe } from '../../pipes/hash-suffix.pipe';
 import { SystemService } from '../../services/system.service';
-import { IDashboardV2, IDashboardV2BlockHeader, IDashboardV2Pool } from '../../models/IDashboardV2';
+import { ISystemInfo } from '../../models/ISystemInfo';
 import { Chart } from 'chart.js';  // Import Chart.js
 import { registerHomeChartPlugins } from './plugins';
-import { HOME_CFG,
-  createAxisPaddingCfg } from './home.cfg';
+import { HOME_CFG, createAxisPaddingCfg } from './home.cfg';
 import {
   findLastFinite,
+  median,
   HomeChartState,
   HomeChartStorage,
   HomeHistoryDrainer,
@@ -33,27 +19,16 @@ import {
   installNerdChartsDebugBootstrap,
   GraphGuard,
   computeXWindow,
-  computeHomeChartScales,
+  computeAxisBounds,
   applyAxisBoundsToChartOptions,
-  shouldUnlockStartup,
   HomeWarmupMachine,
-  shouldInsertRestartCut,
-  syncHomeChartDataAndSmoothing,
-  getHistoryOldestTimestampMs,
-  shouldStartHr1mFromHistory,
-  shouldShowZoomWindowLabel,
-  clampWindowMs,
-  stepWindowMs,
-  toggleWindowMs,
-  ChartZoomCfg,
-  formatZoomWindowLabel,
-  updateChartWithZoomAnimation,
 } from './chart';
 
-import { NbThemeService, NbDialogService, NbToastrService } from '@nebular/theme';
+import { NbThemeService } from '@nebular/theme';
 import { NbTrigger } from '@nebular/theme';
 import { TranslateService } from '@ngx-translate/core';
 import { LocalStorageService } from '../../services/local-storage.service';
+import { IPool } from 'src/app/models/IStratum';
 import {
   getPoolIconUrl as resolvePoolIconUrl,
   getQuickLink,
@@ -61,66 +36,15 @@ import {
   isLocalHost,
   DEFAULT_POOL_ICON_URL,
   DEFAULT_EXTERNAL_POOL_ICON_URL,
-  } from './home.quicklinks';
-
-// Tile helpers (keep this component as a thin container)
-import { maxAsicTemp,
-  splitHumanReadable,
-  toPct,
-  isBarWarn,
-  isBarCrit,
-  isBarMax,
-  BAR_LIMITS,
-  poolDiff,
-  abbrevMiddle,
-  getAsicFrequencyBoundsFromAsic,
-  FreqBounds,
-  getAsicCoreVoltageBoundsFromAsic,
-  VoltBounds,
-	shutdownTempC,
-	isAsicTempWarn,
-	isAsicTempCrit,
-  isBarOver,
-  isOutsideBand,
-  isAtLeast,
-  isBetween,
-  formatUptime,
-  normalizeHomeTileInfo,
-  HomeBarDomSync,
-  hexToRgba
-} from './tiles/utils';
+} from './home.quicklinks';
 @Component({
   selector: 'app-home',
   templateUrl: './home.component.html',
-  styleUrls: ['./home.component.scss'],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrls: ['./home.component.scss']
 })
 
 export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   @ViewChild('myChart') ctx!: ElementRef<HTMLCanvasElement>;
-
-  // Persisted UI state: chart collapsed (visual-only; data continues tracking).
-  public isChartCollapsed: boolean = false;
-  private readonly chartCollapsedKey: string = HOME_CFG.storage.keys.chartCollapsed;
-  private chartWindowMs: number = HOME_CFG.xAxis.fixedWindowMs;
-  private zoomCfg: ChartZoomCfg = {
-    minWindowMs: HOME_CFG.xAxis.minWindowMs,
-    maxWindowMs: HOME_CFG.xAxis.maxWindowMs,
-    zoomStepMs: HOME_CFG.xAxis.zoomStepMs,
-  };
-
-  // CSS vars for meter bars (kept in sync with HOME_CFG)
-  @HostBinding('style.--bar-fill') barFill: string = HOME_CFG.colors.hashrateBase;
-  @HostBinding('style.--bar-track') barTrack: string = HOME_CFG.colors.chartGridColor;
-  @HostBinding('style.--asic-temp-pill') asicTempPill: string = HOME_CFG.colors.asicTemp;
-
-  // DOM hook: special-case bar fills without complicating templates
-  private currentInputBarMaxWanted: boolean = false;
-  private vrTempBarCritWanted: boolean = false;
-  private barDomSync: HomeBarDomSync;
-
-  // Track current Nebular theme name so we can apply small light-theme-only overrides.
-  private currentThemeName: string = '';
 
   private applyXWindowToChart(xMinMs: number, xMaxMs: number): void {
     // Update shared chart options (used on theme refresh etc.)
@@ -142,277 +66,6 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     } catch {}
   }
 
-  private setChartWindowMs(nextMs: number): void {
-    const next = clampWindowMs(nextMs, this.zoomCfg);
-    if (next === this.chartWindowMs) return;
-    const prev = this.chartWindowMs;
-    this.chartWindowMs = next;
-    // Reset sticky temp bounds so the axis re-fits to the new window.
-    this.lastTempAxisMin = null;
-    this.lastTempAxisMax = null;
-
-    if (next > prev) {
-      const oldest = this.dataLabel?.length ? this.dataLabel[0] : null;
-      const cutoff = Date.now() - next;
-      const needsBackfill = !Number.isFinite(oldest as any) || Number(oldest) > cutoff + 2000;
-      if (needsBackfill) {
-        void this.reloadHistoryForWindow(next);
-      }
-    }
-
-    this.updateAxesScaleAdaptive();
-    this.syncChartDatasetsAndSmoothing();
-    // Force immediate dataset refresh so smoothing changes apply before any next tick.
-    this.ngZone.runOutsideAngular(() => {
-      try { this.chart?.update?.('none'); } catch {}
-      updateChartWithZoomAnimation(this.chart, 160);
-    });
-  }
-
-  public zoomOut(evt?: Event): void {
-    try { (evt?.currentTarget as HTMLElement | null)?.blur?.(); } catch {}
-    this.setChartWindowMs(stepWindowMs(this.chartWindowMs, this.zoomCfg.zoomStepMs, this.zoomCfg));
-  }
-
-  public zoomIn(evt?: Event): void {
-    try { (evt?.currentTarget as HTMLElement | null)?.blur?.(); } catch {}
-    this.setChartWindowMs(stepWindowMs(this.chartWindowMs, -this.zoomCfg.zoomStepMs, this.zoomCfg));
-  }
-
-  public toggleZoomWindow(evt?: Event): void {
-    try { (evt?.currentTarget as HTMLElement | null)?.blur?.(); } catch {}
-    this.setChartWindowMs(toggleWindowMs(this.chartWindowMs, this.zoomCfg));
-  }
-
-  public get zoomWindowLabel(): string {
-    const hourShort = this.translateService.instant('UNITS.HOUR_SHORT');
-    const minuteShort = this.translateService.instant('UNITS.MINUTE_SHORT');
-    return formatZoomWindowLabel(this.chartWindowMs, hourShort, minuteShort);
-  }
-
-  public get showZoomWindowLabel(): boolean {
-    return shouldShowZoomWindowLabel(this.chartWindowMs, this.zoomCfg);
-  }
-
-  /**
-   * Tile helpers exposed to the template.
-   * Kept here as public function refs so the HTML can call them.
-   */
-  public maxAsicTemp = maxAsicTemp;
-  public splitHumanReadable = splitHumanReadable;
-  public toPct = toPct;
-  public isBarWarn = isBarWarn;
-  public isBarCrit = isBarCrit;
-  public isBarMax = isBarMax;
-  public isBarOver = isBarOver;
-  public BAR_LIMITS = BAR_LIMITS;
-
-  /**
-   * Input Voltage warn-band (yellow) should be data-driven (HOME_CFG) and centralized.
-   * We keep the template free of thresholds by routing through this method.
-   */
-  public isInputVoltageWarn(voltage: any, voltageMin?: number, voltageMax?: number): boolean {
-    const low = voltageMin ?? HOME_CFG.tiles.inputVoltageBand.low;
-    const high = voltageMax ?? HOME_CFG.tiles.inputVoltageBand.high;
-    return isOutsideBand(voltage, low, high);
-  }
-
-  /**
-   * Input current warning thresholds depend on device max current.
-   * - For devices < lowMaxAThreshold: warn/crit at 98% / 99%
-   * - For devices >= lowMaxAThreshold: use default warn/crit
-   */
-  public isInputCurrentWarn(currentA: any, minA: any, maxA: any): boolean {
-    const cfg = HOME_CFG.tiles.inputCurrent;
-    const max = Number(maxA);
-    const useLow = Number.isFinite(max) && max < Number(cfg.lowMaxAThreshold ?? 8);
-    const warnRel = useLow ? Number(cfg.lowWarnRel ?? 0.98) : Number(cfg.warnRel ?? 0.94);
-    return isBarWarn(currentA, minA, maxA, warnRel);
-  }
-
-  public isInputCurrentCrit(currentA: any, minA: any, maxA: any): boolean {
-    const cfg = HOME_CFG.tiles.inputCurrent;
-    const max = Number(maxA);
-    const useLow = Number.isFinite(max) && max < Number(cfg.lowMaxAThreshold ?? 8);
-    const critRel = useLow ? Number(cfg.lowCritRel ?? 0.99) : Number(cfg.critRel ?? 0.98);
-    return isBarCrit(currentA, minA, maxA, critRel);
-  }
-
-  /** Voltage Regulator temperature bands (yellow/red) are configured in HOME_CFG. */
-  public isVrTempWarn(vrTempC: any): boolean {
-    const band = HOME_CFG.tiles.vrTempBand;
-    return isBetween(vrTempC, band.warnC, band.critC);
-  }
-
-  public isVrTempCrit(vrTempC: any): boolean {
-    const band = HOME_CFG.tiles.vrTempBand;
-    return isAtLeast(vrTempC, band.critC);
-  }
-
-  private readonly lowRpmHintThresholdPct: number = 35;
-  private readonly hoverTooltipOffsetX: number = 14;
-  private readonly hoverTooltipOffsetY: number = 18;
-  private readonly hoverTooltipWidthPx: number = 360;
-  private readonly hoverTooltipHeightPx: number = 140;
-  public activeHoverTooltipId: string | null = null;
-  public hoverTooltipX: number = 0;
-  public hoverTooltipY: number = 0;
-  public poolVerifyTooltipX: number = 0;
-  public poolVerifyTooltipY: number = 0;
-
-  public shouldShowLowRpmHint(percent: any, rpm: any): boolean {
-    const pct = Number(percent);
-    const rpmValue = Number(rpm);
-    return Number.isFinite(pct)
-      && pct > 0
-      && pct < this.lowRpmHintThresholdPct
-      && !(Number.isFinite(rpmValue) && rpmValue > 0);
-  }
-
-  public shouldShowFanRpm(percent: any, rpm: any): boolean {
-    const rpmValue = Number(rpm);
-    return Number.isFinite(rpmValue) && rpmValue > 0;
-  }
-
-  public getFanAriaLabel(channel: number | null, percent: any, rpm: any): string {
-    const pctValue = Number(percent);
-    const rpmValue = Number(rpm);
-    const pctText = `${Number.isFinite(pctValue) ? Math.round(pctValue) : 0} %`;
-    const label = channel != null
-      ? this.translateService.instant('HOME.FAN_CHANNEL', { channel })
-      : this.translateService.instant('HOME.FAN_SPEED');
-
-    if (this.shouldShowLowRpmHint(percent, rpm)) {
-      return `${label}: ${pctText}. ${this.translateService.instant('HOME.FAN_LOW_RPM_HINT')}`;
-    }
-
-    if (!(Number.isFinite(rpmValue) && rpmValue > 0)) {
-      return `${label}: ${pctText}`;
-    }
-
-    const rpmText = `${Number.isFinite(rpmValue) ? Math.round(rpmValue) : 0} RPM`;
-    return `${label}: ${pctText} (${rpmText})`;
-  }
-
-  public showHoverTooltip(id: string, event: MouseEvent): void {
-    this.activeHoverTooltipId = id;
-    this.updateHoverTooltipPosition(event);
-  }
-
-  public showConditionalHoverTooltip(id: string, enabled: boolean, event: MouseEvent): void {
-    if (!enabled) return;
-    this.showHoverTooltip(id, event);
-  }
-
-  public showPoolVerifyTooltip(id: string, enabled: boolean, event: MouseEvent): void {
-    if (!enabled) return;
-    this.activeHoverTooltipId = id;
-    this.updatePoolVerifyTooltipPosition(event);
-  }
-
-  public movePoolVerifyTooltip(event: MouseEvent): void {
-    if (!this.activeHoverTooltipId) return;
-    this.updatePoolVerifyTooltipPosition(event);
-  }
-
-  private updatePoolVerifyTooltipPosition(event: MouseEvent): void {
-    const pad = 12;
-    const tooltipW = 200;
-    const viewportWidth = window.innerWidth || 0;
-    let x = event.clientX + 14;
-    if (x + tooltipW > viewportWidth - pad) {
-      x = Math.max(pad, viewportWidth - tooltipW - pad);
-    }
-    this.poolVerifyTooltipX = x;
-    this.poolVerifyTooltipY = event.clientY + 18;
-  }
-
-  public moveHoverTooltip(event: MouseEvent): void {
-    if (!this.activeHoverTooltipId) return;
-    this.updateHoverTooltipPosition(event);
-  }
-
-  public moveConditionalHoverTooltip(enabled: boolean, event: MouseEvent): void {
-    if (!enabled || !this.activeHoverTooltipId) return;
-    this.updateHoverTooltipPosition(event);
-  }
-
-  public hideHoverTooltip(id?: string): void {
-    if (!id || this.activeHoverTooltipId === id) {
-      this.activeHoverTooltipId = null;
-    }
-  }
-
-  private updateHoverTooltipPosition(event: MouseEvent): void {
-    const viewportWidth = window.innerWidth || 0;
-    const viewportHeight = window.innerHeight || 0;
-    const pad = 12;
-
-    let x = event.clientX + this.hoverTooltipOffsetX;
-    let y = event.clientY + this.hoverTooltipOffsetY;
-
-    if (x + this.hoverTooltipWidthPx > viewportWidth - pad) {
-      x = Math.max(pad, viewportWidth - this.hoverTooltipWidthPx - pad);
-    }
-
-    if (y + this.hoverTooltipHeightPx > viewportHeight - pad) {
-      y = Math.max(pad, event.clientY - this.hoverTooltipHeightPx - 10);
-    }
-
-    this.hoverTooltipX = x;
-    this.hoverTooltipY = y;
-  }
-
-  // ASIC temperature scaling + warn/crit thresholds (used by ASIC °C + A1/A2… squares)
-  public shutdownTempC = shutdownTempC;
-  public isAsicTempWarn = isAsicTempWarn;
-  public isAsicTempCrit = isAsicTempCrit;
-
-  /**
-   * Uptime formatting for the hashrate tile (months/weeks/days/hours/minutes).
-   * Always shows minutes.
-   */
-  public formatUptime = (totalSeconds: number): string =>
-    formatUptime(totalSeconds, HOME_CFG.tiles.uptime);
-
-  // ASIC frequency scaling (device-specific)
-  private _freqBoundsCacheKey: any = null;
-  private _freqBoundsCacheVal: FreqBounds = { min: 0, max: 1 };
-
-  // Snapshot of `/asic` endpoint (same data source as SETTINGS.FREQUENCY)
-  private _asicInfo: any = null;
-  public asicFreqBounds(info: any): FreqBounds {
-    if (info && info === this._freqBoundsCacheKey) return this._freqBoundsCacheVal;
-    const bounds = getAsicFrequencyBoundsFromAsic(info, this._asicInfo);
-    this._freqBoundsCacheKey = info;
-    this._freqBoundsCacheVal = bounds;
-    return bounds;
-  }
-  public asicFreqMax(info: any): number { return this.asicFreqBounds(info).max; }
-
-
-  // ASIC core-voltage scaling (device-specific, Settings-aligned)
-  private _voltBoundsCacheKey: any = null;
-  private _voltBoundsCacheVal: VoltBounds = { min: 0.9, max: 1.8 };
-
-  public asicVoltBounds(info: any): VoltBounds {
-    if (info && info === this._voltBoundsCacheKey) return this._voltBoundsCacheVal;
-    const bounds = getAsicCoreVoltageBoundsFromAsic(info, this._asicInfo);
-    this._voltBoundsCacheKey = info;
-    this._voltBoundsCacheVal = bounds;
-    return bounds;
-  }
-  public asicVoltMin(info: any): number { return this.asicVoltBounds(info).min; }
-  public asicVoltMax(info: any): number { return this.asicVoltBounds(info).max; }
-
-	/**
-	 * Backwards-compatible alias used by the template.
-	 * (The template calls asicCoreVoltageMax(info) to match the label in the UI.)
-	 */
-	public asicCoreVoltageMax(info: any): number { return this.asicVoltMax(info); }
-
-  public poolDiff = poolDiff;
-  public abbrevMiddle = abbrevMiddle;
   // --- GraphGuard
   // Step-Confirmation: how many consecutive "suspicious" samples in the same direction
   // are required before accepting a step. Increase to 3 to be more conservative.
@@ -433,14 +86,43 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   private hashrateYAxisMaxTicks: number = HOME_CFG.yAxis.hashrateMaxTicksDefault;
   private hashrateYAxisMinStepThs: number = HOME_CFG.yAxis.minTickSteps.hashrateMinStepThs;
   private tempYAxisMinStepC: number = HOME_CFG.yAxis.minTickSteps.tempMinStepC;
-  private lastTempAxisMin: number | null = null;
-  private lastTempAxisMax: number | null = null;
   // Chunk size for the history drainer (0 means no limit)
   private chunkSizeDrainer: number = HOME_CFG.historyDrain.chunkSize;
   // --- Rendering smoothing (visual only)
   // Applies to the 1min hashrate dataset. This does not modify data, only the curve rendering.
   // Rule: high point density => higher tension, low density => lower tension.
   private hashrate1mSmoothingCfg = { ...HOME_CFG.smoothing.hashrate1m };
+  private applyHashrate1mSmoothing(): void {
+    const ds: any = (this.chartData?.datasets && this.chartData.datasets.length) ? this.chartData.datasets[0] : null;
+    if (!ds) return;
+
+    const cfg = this.hashrate1mSmoothingCfg;
+    if (!cfg || !cfg.enabled) {
+      ds.tension = 0;
+      try { delete (ds as any).cubicInterpolationMode; } catch {}
+      return;
+    }
+
+    const labels = this.dataLabel;
+    let medianIntervalMs = 0;
+
+    if (labels && labels.length >= 3) {
+      const diffs: number[] = [];
+      const n = Math.min(this.hashrate1mSmoothingCfg.medianWindowPoints, labels.length - 1);
+      for (let i = labels.length - n; i < labels.length; i++) {
+        const d = labels[i] - labels[i - 1];
+        if (Number.isFinite(d) && d > 0) diffs.push(d);
+      }
+      medianIntervalMs = diffs.length ? median(diffs) : 0;
+    }
+
+    let tension = cfg.tensionSlow;
+    if (medianIntervalMs && medianIntervalMs <= cfg.fastIntervalMs) tension = cfg.tensionFast;
+    else if (medianIntervalMs && medianIntervalMs <= cfg.mediumIntervalMs) tension = cfg.tensionMedium;
+
+    ds.tension = tension;
+    ds.cubicInterpolationMode = cfg.cubicInterpolationMode;
+  }
 
   private setHashrateYAxisLabelCount(count: number): void {
     const clamp = HOME_CFG.yAxis.hashrateTickCountClamp;
@@ -458,9 +140,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       const chart: any = this.chart as any;
       if (chart?.options?.scales?.y?.ticks) {
         chart.options.scales.y.ticks.maxTicksLimit = n;
-        this.ngZone.runOutsideAngular(() => {
-          chart.update('none');
-        });
+        chart.update('none');
       }
     } catch {}
   }
@@ -470,13 +150,13 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   private chart?: Chart;
   private themeSubscription?: Subscription;
   private chartInitialized = false;
-  private _info: IDashboardV2 | undefined;
+  private _info: any;
   private timeFormatListener: any;
 
   private wasLoaded = false;
   private saveLock = false;
 
-  public info$: Observable<IDashboardV2>;
+  public info$: Observable<ISystemInfo>;
   public quickLink$: Observable<string | undefined>;
   public fallbackQuickLink$!: Observable<string | undefined>;
   public expectedHashRate$: Observable<number | undefined>;
@@ -506,6 +186,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   public historyDrainRunning = false;
   private historyDrainer: HomeHistoryDrainer;
   public hasChipTemps: boolean = false;
+  public viewMode: 'gauge' | 'bars' = HOME_CFG.uiDefaults.viewMode;
   public isDualPool: boolean = false;
   private historyMinTimestampMs: number | null = null;
   // History drain rendering (to avoid "laggy" incremental build)
@@ -524,6 +205,8 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     debug: this.debugSpikeGuard,
   });
   public debugPillsLayout: boolean = false;
+  public debugMode: boolean = false;
+  private readonly debugModeKey: string = "__nerdCharts_debugMode";
   // Adaptive axis padding so lines don't stick to frame; tweak here.
   private axisPadCfg = createAxisPaddingCfg();
 
@@ -547,7 +230,6 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   private hr1mReloadTimer: any = null;
   private readonly hr1mReloadConsumedKey: string = '__nerdCharts_hr1mReloadConsumedToken';
   private readonly hr1mReloadCooldownUntilKey: string = '__nerdCharts_hr1mReloadCooldownUntil';
-  private isHistoryImporting: boolean = false;
   // NOTE: For hashrate charts, the pill/live value is used ONLY as a warmup gate signal.
   // The plotted data continues to come from the history series (as before).
   // To avoid a visible "shoot" or a brief drop right after restart, we simply do NOT start
@@ -556,7 +238,6 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   private debugAxisPadding: boolean = false;
   private readonly axisPadOverrideEnabledKey: string = '__nerdCharts_axisPaddingOverrideEnabled';
   private readonly axisPadStorageKey: string = '__nerdCharts_axisPadding';
-  public nerdOsLogoColor: string = hexToRgba(HOME_CFG.colors.hashrateBase, 0.6);
 
   ngAfterViewChecked(): void {
     // Ensure chart is initialized only once when the canvas becomes available
@@ -564,12 +245,6 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       this.chartInitialized = true; // Prevent re-initialization
       this.initChart();
     }
-
-    // Keep the Input Current bar coloring in sync even when it hits 100%
-    this.barDomSync.syncCurrentInputBarMaxFill(!!this.currentInputBarMaxWanted, this.currentThemeName);
-
-    // Keep the VR Temp bar coloring in sync for the CRIT band (>= 99%)
-    this.barDomSync.syncVrTempBarCritFill(!!this.vrTempBarCritWanted, this.currentThemeName);
   }
 
   private initChart(): void {
@@ -589,9 +264,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       visibility.forEach((hidden: boolean, i: number) => {
         if (hidden) this.chart.getDatasetMeta(i).hidden = true;
       });
-      this.ngZone.runOutsideAngular(() => {
-        this.chart!.update();
-      });
+      this.chart.update();
     }
 
     try {
@@ -616,13 +289,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     private themeService: NbThemeService,
     private systemService: SystemService,
     private translateService: TranslateService,
-    private localStorage: LocalStorageService,
-    private hostEl: ElementRef<HTMLElement>,
-    private renderer: Renderer2,
-    private cdr: ChangeDetectorRef,
-    private ngZone: NgZone,
-    private dialogService: NbDialogService,
-    private toastrService: NbToastrService
+    private localStorage: LocalStorageService
   ) {
     // Local persistence wrapper for chart state/settings
     this.chartStorage = new HomeChartStorage({
@@ -631,15 +298,9 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
       removeItem: (k) => this.localStorageRemove(k),
     });
 
-    // Restore chart collapsed state (visual-only)
-    this.isChartCollapsed = this.localStorageGet(this.chartCollapsedKey) === '1';
-
-    this.barDomSync = new HomeBarDomSync(this.hostEl, this.renderer, HOME_CFG.tiles.domSync);
-
     this.historyDrainer = new HomeHistoryDrainer(
       {
-        fetchInfo: (startTimestampMs, chunkSize) =>
-          this.systemService.getDashboardV2WithSpan(startTimestampMs, chunkSize, HOME_CFG.xAxis.maxWindowMs),
+        fetchInfo: (startTimestampMs, chunkSize) => this.systemService.getInfo(startTimestampMs, chunkSize),
         importHistoryChunk: (history) => this.importHistoricalData(history),
         setRunning: (running) => (this.historyDrainRunning = running),
         setSuppressed: (suppressed) => (this.suppressChartUpdatesDuringHistoryDrain = suppressed),
@@ -664,6 +325,15 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
         useThrottledRender: this.historyDrainUseThrottledRender,
       }
     );
+    const documentStyle = getComputedStyle(document.documentElement);
+    const bodyStyle = getComputedStyle(document.body);
+    const textColor = bodyStyle.getPropertyValue('--card-text-color');
+    const textColorSecondary = bodyStyle.getPropertyValue('--card-text-color');
+
+    // Load persisted view mode early
+    const persistedView = this.chartStorage.loadViewMode();
+    if (persistedView) this.viewMode = persistedView;
+
     // Load optional min-history timestamp (used after debug clear to prevent immediate refill)
     try {
       const v = Number(this.chartStorage.loadMinHistoryTimestampMs());
@@ -697,10 +367,8 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.info$ = createSystemInfoPolling$({
       pollMs: 5000,
       chunkSize: this.chunkSizeDrainer,
-      historyWindowMs: HOME_CFG.xAxis.maxWindowMs,
-      fetchInfo: (startTimestampMs, chunkSize) =>
-        this.systemService.getDashboardV2WithSpan(startTimestampMs, chunkSize, HOME_CFG.xAxis.maxWindowMs),
-      defaultInfo: () => SystemService.defaultDashboardV2(),
+      fetchInfo: (startTimestampMs, chunkSize) => this.systemService.getInfo(startTimestampMs, chunkSize),
+      defaultInfo: () => SystemService.defaultInfo(),
       getStoredLastTimestampMs: () => this.getStoredTimestamp(),
       getForceStartTimestampMs: () => {
         try {
@@ -736,7 +404,7 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
         // expectedHashRate$ returns an "expected" value used in UI. For internal comparisons
         // we keep everything in H/s to match live pool sums and chart values.
         try {
-          const expectedGh = Math.floor(Number(info.performance.frequency) * ((Number(info.performance.smallCoreCount) * Number(info.performance.asicCount)) / 1000));
+          const expectedGh = Math.floor(Number(info.frequency) * ((Number(info.smallCoreCount) * Number(info.asicCount)) / 1000));
           const expectedHs = Number.isFinite(expectedGh) && expectedGh > 0 ? expectedGh * 1e9 : 0;
           this.expectedHashrateHsLast = expectedHs;
         } catch {
@@ -757,8 +425,8 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
         const systemOk = Number.isFinite(this.expectedHashrateHsLast) && this.expectedHashrateHsLast > 0;
         this.warmupMachine.observeLive({
           nowMs,
-          vregTempC: info.thermal.vrTemp,
-          asicTempC: info.thermal.asicTemp,
+          vregTempC: (info as any).vrTemp,
+          asicTempC: (info as any).temp,
           liveHashrateHs: liveHs,
           expectedHashrateHs: this.expectedHashrateHsLast,
           systemOk,
@@ -776,59 +444,44 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
         }
       },
       mapInfo: (info) => {
-        // MOCK
-        //(info as any).asicTemps = [50, 51, 52, 53, 54, 55, 53, 51];
+        // Keep the same normalization as before (format/round values for UI)
+        info.minVoltage = parseFloat(info.minVoltage.toFixed(1));
+        info.maxVoltage = parseFloat(info.maxVoltage.toFixed(1));
+        info.minPower = parseFloat(info.minPower.toFixed(1));
+        info.maxPower = parseFloat(info.maxPower.toFixed(1));
+        info.power = parseFloat(info.power.toFixed(1));
+        info.voltage = parseFloat((info.voltage / 1000).toFixed(1));
 
-        // Normalize/derive everything the tiles need (bars + squares).
-        const derived = normalizeHomeTileInfo(info, {
-          powerUsageAliases: HOME_CFG.tiles.powerUsageAliases,
-          vrTempLimits: (BAR_LIMITS as any).vrTemp,
-        });
-        this.currentInputBarMaxWanted = derived.currentInputBarMaxWanted;
-        this.vrTempBarCritWanted = derived.vrTempBarCritWanted;
+        info.current = parseFloat((info.current / 1000).toFixed(1));
+        info.coreVoltageActual = parseFloat((info.coreVoltageActual / 1000).toFixed(2));
+        info.coreVoltage = parseFloat((info.coreVoltage / 1000).toFixed(2));
+        info.temp = parseFloat(info.temp.toFixed(1));
+        info.vrTemp = parseFloat(info.vrTemp.toFixed(1));
+        info.overheat_temp = parseFloat(info.overheat_temp.toFixed(1));
 
-        this.isDualPool = derived.isDualPool;
-        this.hasChipTemps = derived.hasChipTemps;
+        this.isDualPool = (info.stratum?.activePoolMode ?? 0) === 1;
+        const chipTemps = info?.asicTemps ?? [];
+        this.hasChipTemps =
+          Array.isArray(chipTemps) &&
+          chipTemps.length > 0 &&
+          chipTemps.some((v: any) => v != null && !Number.isNaN(Number(v)) && Number(v) !== 0);
 
         return info;
       },
     });
 
     this.expectedHashRate$ = this.info$.pipe(map(info => {
-      if (!info || info.performance.frequency == null || info.performance.smallCoreCount == null || info.performance.asicCount == null) return undefined;
-      const val = Math.floor(info.performance.frequency * ((info.performance.smallCoreCount * info.performance.asicCount) / 1000));
-      return Number.isFinite(val) ? val : undefined;
+      if (!info) return 0; // Return 0 if no info
+      return Math.floor(info.frequency * ((info.smallCoreCount * info.asicCount) / 1000));
     }));
 
     this.quickLink$ = this.info$.pipe(
-      map(info => this.getQuickLink((info.stratum.pools[0]?.host ?? ''), (info.stratum.pools[0]?.user ?? '')))
+      map(info => this.getQuickLink(info.stratumURL, info.stratumUser))
     );
 
     this.fallbackQuickLink$ = this.info$.pipe(
-      map(info => this.getQuickLink((info.stratum.pools[1]?.host ?? ''), (info.stratum.pools[1]?.user ?? '')))
+      map(info => this.getQuickLink(info.fallbackStratumURL, info.fallbackStratumUser))
     );
-  }
-
-  public toggleChartCollapsed(evt?: Event): void {
-    this.isChartCollapsed = !this.isChartCollapsed;
-
-    // Remove focus after click so Nebular doesn't keep the button in a "pressed"/focused visual state.
-    // (Keeps the interaction clean while still allowing keyboard users to focus intentionally.)
-    try { (evt?.currentTarget as HTMLElement | null)?.blur?.(); } catch {}
-
-    if (this.isChartCollapsed) {
-      this.localStorageSet(this.chartCollapsedKey, '1');
-      return;
-    }
-
-    // Expanded again: clear persisted flag and make sure Chart.js recalculates layout.
-    this.localStorageRemove(this.chartCollapsedKey);
-    setTimeout(() => {
-      this.ngZone.runOutsideAngular(() => {
-        try { (this.chart as any)?.resize?.(); } catch {}
-        try { this.chart?.update?.('none' as any); } catch {}
-      });
-    }, 280);
   }
 
   /**
@@ -851,16 +504,13 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
   }
 
   /**
-   * Ensure the "Input current" meter bar can still colorize correctly.
+   * Indicates whether the given stratum pool supports ICMP ping.
    *
-   * The HTML expects these aliases:
-   *  - info.currentA
-   *  - info.minCurrentA
-   *  - info.maxCurrentA
+   * Some pools intentionally block or ignore ping requests.
+   * This helper centralizes pool-specific exceptions.
    *
-   * Priority for limits:
-   *  1) If the backend already provides explicit current limits (in A or mA), keep them.
-   *  2) Otherwise derive maxCurrentA from configured power/voltage bounds.
+   * @param stratumURL Stratum pool URL or host
+   * @returns `true` if ping is supported, otherwise `false`
    */
   public supportsPing(stratumURL: string): boolean {
     return supportsPing(stratumURL);
@@ -959,8 +609,27 @@ export class HomeComponent implements AfterViewChecked, OnInit, OnDestroy {
     }
   }
 
+
+  private syncDebugModeFromStorage(): void {
+    this.debugMode = this.localStorageGet(this.debugModeKey) === "1";
+  }
+
+  public onDebugModeToggle(enabled: boolean): void {
+    const g: any = globalThis as any;
+    const nerd = g?.__nerdCharts;
+
+    if (enabled) {
+      try { nerd?.enable?.(true); } catch {}
+      try { this.localStorageSet(this.debugModeKey, "1"); } catch {}
+    } else {
+      try { nerd?.disable?.(true); } catch {}
+      try { this.localStorageRemove(this.debugModeKey); } catch {}
+    }
+
+    this.debugMode = enabled;
+  }
+
 ngOnInit() {
-    this.chartWindowMs = clampWindowMs(HOME_CFG.xAxis.fixedWindowMs, this.zoomCfg);
     // Chart.js plugins are global; register once.
     registerHomeChartPlugins();
     installNerdChartsDebugBootstrap(globalThis, {
@@ -1020,16 +689,11 @@ ngOnInit() {
         }
       },
     });
+    this.syncDebugModeFromStorage();
     this.graphGuardEngine.configure({ debug: !!this.debugSpikeGuard });
     this.loadAxisPaddingOverrides();
-    this.themeSubscription = this.themeService.getJsTheme().subscribe((t: any) => {
-      // Nebular emits the current theme object here (includes a `name`).
-      this.currentThemeName = String(t?.name ?? '').trim();
+    this.themeSubscription = this.themeService.getJsTheme().subscribe(() => {
       this.updateThemeColors();
-      // Re-apply any bar overrides that are theme-dependent.
-      this.barDomSync.syncCurrentInputBarMaxFill(!!this.currentInputBarMaxWanted, this.currentThemeName);
-      this.barDomSync.syncVrTempBarCritFill(!!this.vrTempBarCritWanted, this.currentThemeName);
-      this.cdr.markForCheck();
     });
 
     // Listen for timeFormat changes
@@ -1038,19 +702,15 @@ ngOnInit() {
     };
     window.addEventListener('timeFormatChanged', this.timeFormatListener);
 
-    // Pull `/asic` once so the Current Frequency bar can use the same
-    // model-specific frequency table as the Settings screen.
-    (async () => {
-      try {
-        const asic = await firstValueFrom(this.systemService.getAsicInfo(''));
-        this._asicInfo = asic;
-        this._freqBoundsCacheKey = null;
-        this._voltBoundsCacheKey = null;
-        this.cdr.markForCheck();
-      } catch {
-        // ignore
+    // If a wipe was requested before the experimental dashboard was loaded, do it now once.
+    try {
+      if (localStorage.getItem('__pendingChartHistoryWipe') === '1') {
+        localStorage.removeItem('__pendingChartHistoryWipe');
+        (this as any).clearChartHistoryInternal();
       }
-    })();
+    } catch {
+      // ignore
+    }
 }
 
   ngOnDestroy(): void {
@@ -1085,21 +745,14 @@ ngOnInit() {
       };
 
       if (this.chart) {
-        this.ngZone.runOutsideAngular(() => {
-          this.chart!.update();
-        });
+        this.chart.update();
       }
     }
   }
 
   private importHistoricalData(data: any) {
     // relative to absolute time stamps
-    this.isHistoryImporting = true;
-    try {
-      this.updateChartData(data);
-    } finally {
-      this.isHistoryImporting = false;
-    }
+    this.updateChartData(data);
 
     if (data.timestamps && data.timestamps.length) {
       const lastRel = data.timestamps[data.timestamps.length - 1];
@@ -1206,7 +859,7 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
     if (!this.chart || !this.chartOptions?.scales) return;
 
     // Always enforce a stable X-window (e.g. 1h), regardless of how many points exist.
-    const { xMinMs, xMaxMs } = computeXWindow(this.dataLabel || [], this.chartWindowMs);
+    const { xMinMs, xMaxMs } = computeXWindow(this.dataLabel || [], HOME_CFG.xAxis.fixedWindowMs);
     this.applyXWindowToChart(xMinMs, xMaxMs);
 
     const labels = this.dataLabel || [];
@@ -1215,50 +868,31 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
     // but we can't compute Y-bounds without data.
     if (!labels.length) return;
 
+    const hr10m = this.chart.isDatasetVisible(1) ? this.dataData10m : null;
+    const hr1h = this.chart.isDatasetVisible(2) ? this.dataData1h : null;
+    const hr1d = this.chart.isDatasetVisible(3) ? this.dataData1d : null;
     const temp4 = this.chart.isDatasetVisible(4);
     const temp5 = this.chart.isDatasetVisible(5);
     const vreg = temp4 ? this.dataVregTemp : (!temp4 && !temp5 ? this.dataVregTemp : null);
     const asic = temp5 ? this.dataAsicTemp : (!temp4 && !temp5 ? this.dataAsicTemp : null);
-
-    const visibility = {
-      hr1m: this.chart.isDatasetVisible(0),
-      hr10m: this.chart.isDatasetVisible(1),
-      hr1h: this.chart.isDatasetVisible(2),
-      hr1d: this.chart.isDatasetVisible(3),
-    };
-    const series = {
-      hr1m: this.dataData1m,
-      hr10m: this.dataData10m,
-      hr1h: this.dataData1h,
-      hr1d: this.dataData1d,
-      vregTemp: vreg ?? [],
-      asicTemp: asic ?? [],
-    };
-
-    const { bounds, tempAxisMin, tempAxisMax } = computeHomeChartScales({
+    const bounds = computeAxisBounds({
       labels,
+      hr1m: this.dataData1m,
+      hr10m,
+      hr1h,
+      hr1d,
+      vregTemp: vreg,
+      asicTemp: asic,
       xMinMs,
       xMaxMs,
-      series,
-      visibility,
       axisPadCfg: this.axisPadCfg,
       maxTicks: this.hashrateYAxisMaxTicks,
       hashrateMinStepThs: this.hashrateYAxisMinStepThs,
       tempMinStepC: this.tempYAxisMinStepC,
       liveRefHs: this.lastLivePoolSumHs,
-      softIncludeRel: HOME_CFG.yAxis.hashrateSoftIncludeRel,
-      axisMinPadC: HOME_CFG.tempScale.axisMinPadC,
-      axisMaxPadC: HOME_CFG.tempScale.axisMaxPadC,
-      tempHysteresisC: HOME_CFG.tempScale.hysteresisC,
-      prevTempMin: this.lastTempAxisMin,
-      prevTempMax: this.lastTempAxisMax,
     });
 
-    if (Number.isFinite(tempAxisMin as any)) this.lastTempAxisMin = tempAxisMin as number;
-    if (Number.isFinite(tempAxisMax as any)) this.lastTempAxisMax = tempAxisMax as number;
-
     applyAxisBoundsToChartOptions(this.chartOptions, bounds);
-
   }
 
   // --- Sanitizing helpers (invalid samples become NaN => visual gap / never plotted)
@@ -1382,15 +1016,11 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
 
     const live = Number(livePoolSumHs);
     const expected = Number(this.expectedHashrateHsLast);
-    const ratio = Number(HOME_CFG.startup.expectedUnlockRatio ?? 0.75);
-    const liveStable = !!this.graphGuardEngine?.isLiveRefStable?.();
+    if (!Number.isFinite(live) || live <= 0) return;
+    if (!Number.isFinite(expected) || expected <= 0) return;
 
-    if (shouldUnlockStartup({
-      liveHs: live,
-      expectedHs: expected,
-      expectedUnlockRatio: ratio,
-      liveIsStable: liveStable,
-    })) {
+    const ratio = Number(HOME_CFG.startup.expectedUnlockRatio ?? 0.75);
+    if (live >= expected * ratio) {
       this.startupUnlocked = true;
       const n = Math.max(0, Math.round(Number(HOME_CFG.startup.bypassGuardSamples ?? 0)));
       this.bypassRemaining = {
@@ -1523,13 +1153,7 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
           : histOk;
 
         if (!this.hr1mStarted) {
-          if (shouldStartHr1mFromHistory({
-            hr1mStarted: this.hr1mStarted,
-            startupUnlocked: this.startupUnlocked,
-            histOk,
-            histUnlockOk,
-            isHistoryImporting: this.isHistoryImporting,
-          })) {
+          if (this.startupUnlocked && histUnlockOk) {
             this.hr1mStarted = true;
             // Smooth startup + optional reload should only trigger after an actual restart (hard cut).
             // On normal page loads, we keep snappy behavior (no smooth window).
@@ -1554,13 +1178,9 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
       const liveOkNow = Number.isFinite(livePoolSum) && livePoolSum > 0;
       const stageNow = this.warmupMachine.getStage();
       const historyHr1m = Number(entry.hashrate_1m);
-      const restartMarker = shouldInsertRestartCut({
-        liveOkNow,
-        vregRaw,
-        asicRaw,
-        historyHr1m,
-        tempMinValidC: Number(HOME_CFG.warmup.tempMinValidC ?? 10),
-      });
+      const restartMarker = (!liveOkNow) && (
+        (!Number.isFinite(vregRaw) || !Number.isFinite(asicRaw)) || (Number.isFinite(historyHr1m) && historyHr1m <= 0)
+      );
 
       if (stageNow === 'READY' && restartMarker) {
         this.warmupMachine.reset(entry.timestamp);
@@ -1683,8 +1303,6 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
       if (this.chartData) {
         this.updateChart();
       }
-
-      this.maybeExpandHistoryForZoom();
     } catch (err) {
       console.warn('[HomeComponent] Failed to load chartData from storage (keeping it untouched).', err);
 
@@ -1694,17 +1312,6 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
       if (this.chartData) {
         this.updateChart();
       }
-    }
-  }
-
-  private maybeExpandHistoryForZoom(): void {
-    const maxWindow = this.zoomCfg?.maxWindowMs ?? 0;
-    if (!maxWindow || !this.dataLabel?.length) return;
-
-    const oldest = this.dataLabel[0];
-    const cutoff = Date.now() - maxWindow;
-    if (!Number.isFinite(oldest as any) || Number(oldest) > cutoff + 2000) {
-      void this.reloadHistoryForWindow(maxWindow);
     }
   }
 
@@ -1780,8 +1387,8 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
 
   private filterOldData(): void {
     const now = new Date().getTime();
-    // Keep the in-memory series consistent with the current x-axis viewport.
-    this.chartState.trimToWindow(now, this.zoomCfg.maxWindowMs);
+    // Keep the in-memory series consistent with the configured x-axis viewport.
+    this.chartState.trimToWindow(now);
 
     if (this.chartState.labels.length) {
       this.storeTimestamp(this.chartState.labels[this.chartState.labels.length - 1]);
@@ -1799,39 +1406,52 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
     return this.chartStorage.loadLastTimestamp();
   }
 
-  private syncChartDatasetsAndSmoothing(): void {
-    syncHomeChartDataAndSmoothing({
-      chartData: this.chartData,
-      chartOptions: this.chartOptions,
-      chart: this.chart,
-      series: {
-        labels: this.dataLabel,
-        hr1m: this.dataData1m,
-        hr10m: this.dataData10m,
-        hr1h: this.dataData1h,
-        hr1d: this.dataData1d,
-        vregTemp: this.dataVregTemp,
-        asicTemp: this.dataAsicTemp,
-      },
-      hashrateDisplayValue: this.getPoolHashrateHsSum(),
-      smoothingCfg: this.hashrate1mSmoothingCfg,
-      windowMs: this.chartWindowMs,
-      zoomCfg: this.zoomCfg,
-      hideTempDatasets: false,
-    });
+private updateTempScaleFromLatest(): void {
+  // Keep temp axis zoomed: latest temps +/- latestPadC (makes fluctuations visible).
+  const lastV = findLastFinite(this.dataVregTemp as any[]);
+  const lastA = findLastFinite(this.dataAsicTemp as any[]);
+  if (lastV == null && lastA == null) return;
+
+  const vals = [lastV, lastA].filter(v => v != null && Number.isFinite(Number(v))) as number[];
+  if (!vals.length) return;
+
+  const minLast = Math.min(...vals);
+  const maxLast = Math.max(...vals);
+
+  const pad = HOME_CFG.tempScale.axisMaxPadC || 5;
+  const min = Math.max(0, Math.floor(minLast - pad));
+  const max = Math.ceil(maxLast + pad);
+
+  if (this.chartOptions?.scales?.y_temp) {
+    this.chartOptions.scales.y_temp.min = min;
+    this.chartOptions.scales.y_temp.max = max;
   }
+}
 
   private updateChart() {
-    this.syncChartDatasetsAndSmoothing();
+    this.chartData.labels = this.dataLabel;
+    this.chartData.datasets[0].data = this.dataData1m;
+    this.chartData.datasets[1].data = this.dataData10m;
+    this.chartData.datasets[2].data = this.dataData1h;
+    this.chartData.datasets[3].data = this.dataData1d;
+    this.chartData.datasets[4].data = this.dataVregTemp;
+    this.chartData.datasets[5].data = this.dataAsicTemp;
+
+    this.updateTempScaleFromLatest();
+
+    // Update hashrate pill display value from live pool sum.
+    if (this.chartOptions?.plugins?.valuePills) {
+      this.chartOptions.plugins.valuePills.hashrateDisplayValue = this.getPoolHashrateHsSum();
+    }
 
     if (!this.chart) {
       return;
     }
 
-    this.ngZone.runOutsideAngular(() => {
-      this.updateAxesScaleAdaptive();
-      this.chart!.update();
-    });
+    this.updateAxesScaleAdaptive();
+    this.applyHashrate1mSmoothing();
+
+    this.chart.update();
   }
 
   private updateThemeColors(): void {
@@ -1839,45 +1459,156 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
 
     if (this.chart) {
       this.chart.options = this.chartOptions;
-      this.ngZone.runOutsideAngular(() => {
-        this.chart!.update();
-      });
+      this.chart.update();
     }
   }
 
   // Toggle only if feature exists, then persist
+  public onTempViewClick(event: Event): void {
+    // Prevent toggling when chip temps aren't available
+    if (!this.hasChipTemps) return;
+
+    // Toggle mode
+    this.viewMode = this.viewMode === 'bars' ? 'gauge' : 'bars';
+
+    // Persist to local storage
+    this.chartStorage.saveViewMode(this.viewMode);
+  }
+
+  public poolBadgeStatus(): string {
+    const stratum = this._info.stratum;
+
+    if (stratum === undefined) {
+      return "warning";
+    }
+
+    const pool = stratum.pools[0];
+
+    if (!pool.connected) {
+      return 'danger';
+    }
+
+    // Failover mode: same behavior as before
+    return stratum.usingFallback ? 'warning' : 'success';
+  }
+
+  public getPoolPercent(idx: 0 | 1): number {
+    const balance = this._info.stratum.poolBalance ?? 50;
+    return idx === 0 ? balance : 100 - balance;
+  }
+
+  public showPoolBadge(idx: 0 | 1): boolean {
+    return this.getPoolPercent(idx) > 0;
+  }
+
+  public poolBadgeLabel(): string {
+    const stratum = this._info.stratum;
+
+    if (stratum === undefined) {
+      return this.translateService.instant('HOME.DISCONNECTED');
+    }
+    const pool = stratum.pools[0];
+
+    if (!pool.connected) {
+      return this.translateService.instant('HOME.DISCONNECTED');
+    }
+    return stratum.usingFallback
+      ? this.translateService.instant('HOME.FALLBACK_POOL')
+      : this.translateService.instant('HOME.PRIMARY_POOL');
+  }
+
+  public dualPoolBadgeLabel(i: 0 | 1) {
+    const percent = this.getActiveBalance(i);
+    return `Pool ${i + 1} (${percent} %)`;
+  }
+
+  public dualPoolBadgeTooltip(i: 0 | 1) {
+    const stratum = this._info.stratum;
+    const pool = stratum.pools[i];
+    const connected = pool.connected;
+    const diffErr = pool.poolDiffErr;
+
+    if (diffErr) {
+      return this.translateService.instant('HOME.SHARE_TOO_SMALL');
+    }
+
+    if (connected) {
+      return this.translateService.instant('HOME.CONNECTED');
+    }
+
+    return this.translateService.instant('HOME.DISCONNECTED');
+  }
+
+  public dualPoolBadgeStatus(i: 0 | 1) {
+    const pool = this._info.stratum.pools[i];
+    const connected = pool.connected;
+    const diffErr = pool.poolDiffErr;
+
+    if (diffErr) {
+      return "warning";
+    }
+
+    if (connected) {
+      return "success";
+    }
+
+    return "danger";
+  }
 
   public getPoolHashrate(i: 0 | 1) {
-    if (!this._info?.stratum) return 0;
     const balance = this.getActiveBalance(i);
-    return this._info.performance.hashRate * balance / 100.0;
+    return this._info.hashRate * balance / 100.0;
   }
 
   public getActiveBalance(i: 0 | 1) {
-    const stratum = this._info?.stratum;
-    if (!stratum) return 0;
-    const active = stratum.pools.map((p: IDashboardV2Pool) => p.connected && !p.verifyBlocked);
+    const stratum = this._info.stratum;
+    const connected = stratum.pools.map(p => p.connected);
     const balance = stratum.poolBalance;
 
-    // If neither pool is active
-    if (!active[0] && !active[1]) return 0;
+    // If neither pool is connected
+    if (!connected[0] && !connected[1]) {
+      return 0;
+    }
 
-    // If both pools are active
-    if (active[0] && active[1]) return i === 0 ? balance : 100 - balance;
+    // If both pools are connected
+    if (connected[0] && connected[1]) {
+      return i === 0 ? balance : 100 - balance;
+    }
 
-    // Only one pool is active → return 100 for that pool, 0 for the other
-    return active[i] ? 100 : 0;
+    // Only one pool is connected → return 100 for that pool, 0 for the other
+    return connected[i] ? 100 : 0;
   }
 
 
-  public getPoolInfo(i?: 0 | 1): IDashboardV2Pool {
-    const stratum = this._info?.stratum;
-    if (!this._info || !stratum) return {} as any;
+  public getPoolInfo(i?: 0 | 1): IPool {
+    const stratum = this._info.stratum;
 
+    // failover logic, "current" pool
     if (i === undefined) {
-      return stratum.pools[0] ?? {} as any;
+      const useFallback = stratum?.usingFallback ?? false;
+      const base = stratum?.pools[useFallback ? 1 : 0] ?? {};
+
+      return {
+        ...base,
+        host: useFallback ? this._info.fallbackStratumURL : this._info.stratumURL,
+        port: useFallback ? this._info.fallbackStratumPort : this._info.stratumPort,
+        user: useFallback ? this._info.fallbackStratumUser : this._info.stratumUser,
+      };
     }
-    return stratum.pools[i] ?? {} as any;
+
+    // explicit pool 0 / 1 (dual pool)
+    const base = stratum.pools[i];
+
+    return {
+      ...base,
+      host: i === 0 ? this._info.stratumURL : this._info.fallbackStratumURL,
+      port: i === 0 ? this._info.stratumPort : this._info.fallbackStratumPort,
+      user: i === 0 ? this._info.stratumUser : this._info.fallbackStratumUser,
+    };
+  }
+
+  public getPoolCardIndices(): (0 | 1 | undefined)[] {
+    return (this._info.stratum?.activePoolMode ?? 0) === 0 ? [undefined] : [0, 1];
   }
 
   private clearChartHistoryInternal(updateChartNow: boolean): void {
@@ -1903,200 +1634,34 @@ private setAxisPadding(cfg: any, persist: boolean = false): void {
     }
   }
 
-  private async reloadHistoryForWindow(windowMs: number): Promise<void> {
-    const start = Date.now() - Math.max(0, Math.round(Number(windowMs || 0)));
-    let info: any = null;
-    try {
-      info = await firstValueFrom(
-        this.systemService.getDashboardV2WithSpan(start, this.chunkSizeDrainer, windowMs)
-      );
-    } catch {
-      // ignore (next polling tick will retry)
-      return;
-    }
-
-    if (!info?.history?.timestamps?.length) {
-      return;
-    }
-
-    const existingOldest = this.dataLabel.length ? Number(this.dataLabel[0]) : null;
-    const fetchedOldest = getHistoryOldestTimestampMs(info.history);
-    const shouldReplace = !this.dataLabel.length
-      || (Number.isFinite(existingOldest as any)
-        && Number.isFinite(fetchedOldest as any)
-        && (fetchedOldest as number) < (existingOldest as number) - 2000);
-
-    // If the fetched history does NOT extend further back than what we already have,
-    // avoid wiping local history (e.g. after a miner reboot when firmware history reset).
-    if (!shouldReplace) {
-      this.importHistoricalData(info.history);
-      return;
-    }
-
-    // Reset state so older points can be re-imported in one pass.
-    this.historyDrainer?.stop();
-    this.historyDrainRunning = false;
-    this.suppressChartUpdatesDuringHistoryDrain = false;
-
-    this.clearChartData();
-    this.graphGuardEngine.reset();
-
-    this.chartStorage.clearPersistedState();
-    this.chartStorage.clearLastTimestamp();
-    this.chartStorage.clearMinHistoryTimestampMs();
-    this.historyMinTimestampMs = null;
-
-    this.importHistoricalData(info.history);
-  }
-
   // edge case where chart data in the browser is not consistent
   // this happens when adding new charts
-
-  public rejectRate(id?: number): number {
-  // Template can call this before the first info payload arrived.
-  // Be defensive to avoid breaking the whole dashboard render.
-  const pools = this._info?.stratum?.pools;
-  if (!Array.isArray(pools) || pools.length === 0) return 0;
-
-  // In some template contexts (e.g. single pool tile) `idx` may be undefined.
-  // For UI consistency we default to the PRIMARY pool (index 0), which also matches the Shares card.
-  const idx = (typeof id === 'number' && Number.isFinite(id)) ? id : 0;
-
-  const pool = pools[idx];
-  if (!pool) return 0;
-
-  const rejected = Number(pool.rejected ?? 0);
-  const accepted = Number(pool.accepted ?? 0);
-
-  const total = accepted + rejected;
-  if (!total) return 0;
-
-  return (rejected / total) * 100;
-}
-  public openResetStatsDialog(template: any): void {
-    this.dialogService.open(template);
+  private validateOrResetHistory(): void {
+    try {
+      this.chartState.validateLengthsOrReset();
+    } catch {
+      this.chartState.clear();
+    }
   }
 
-  public confirmResetStats(ref: any): void {
-    ref.close();
-    this.systemService.resetStats().subscribe({
-      next: () => this.toastrService.success(
-        this.translateService.instant('HOME.RESET_STATS_SUCCESS'),
-        this.translateService.instant('COMMON.SUCCESS')
-      ),
-      error: () => this.toastrService.danger(
-        this.translateService.instant('HOME.RESET_STATS_FAILED'),
-        this.translateService.instant('COMMON.ERROR')
-      )
-    });
+  public rejectRate(id: number) {
+    const stratum = this._info.stratum;
+
+    if (stratum === undefined) {
+      return 0;
+    }
+
+    const rejected = stratum.pools[id].rejected;
+    const accepted = stratum.pools[id].accepted;
+
+    if (accepted == 0 && rejected == 0) {
+      return 0.0;
+    }
+    return rejected / (accepted + rejected) * 100;
   }
 
-private importHistoricalDataChunked(history: any): void {
+
+  private importHistoricalDataChunked(history: any): void {
     this.historyDrainer.ingest(history);
   }
-
-  /* ── Block Header helpers ── */
-
-  trackByPool(_index: number, bh: IDashboardV2BlockHeader): number {
-    return bh.pool;
-  }
-
-  getPoolVerificationOk(poolIdx: number): boolean {
-    const bh = this._info?.coinbase?.blockHeaders?.find(h => h.pool === poolIdx);
-    return bh?.verificationOk ?? false;
-  }
-
-  getVerifyPoolIdx(idx: number | undefined, usingFallback: boolean | undefined): number {
-    return (usingFallback && !this.isDualPool) ? 1 : (idx ?? 0);
-  }
-
-  getPoolVerifyMode(poolIdx: number): number {
-    return poolIdx === 0
-      ? (this._info?.coinbase?.pools[0]?.mode ?? 0)
-      : (this._info?.coinbase?.pools[1]?.mode ?? 0);
-  }
-
-  getPoolHonestyPct(bh: IDashboardV2BlockHeader): number | null {
-    const checks = bh.verificationCheckCount ?? 0;
-    if (checks === 0) return null;
-    const fails = bh.verificationFailCount ?? 0;
-    return ((checks - fails) / checks) * 100;
-  }
-
-  getPoolVerificationColor(poolIdx: number): string | null {
-    const mode = this.getPoolVerifyMode(poolIdx);
-    if (mode === 0) return null;
-    const bh = this._info?.coinbase?.blockHeaders?.find(h => h.pool === poolIdx);
-    if (!bh) return null;
-    const honesty = this.getPoolHonestyPct(bh);
-    if (honesty === null) return '#4caf50'; // not yet checked — neutral green
-    return honesty >= 100 ? '#4caf50' : '#f44336';
-  }
-
-  getPoolVerificationTooltip(poolIdx: number): string {
-    const mode = this.getPoolVerifyMode(poolIdx);
-    if (mode === 0) return '';
-    const bh = this._info?.coinbase?.blockHeaders?.find(h => h.pool === poolIdx);
-    if (!bh) return '';
-
-    const lines: string[] = [];
-
-    if (mode === 1) {
-      // Basic mode: only address check. Show payout share as % and BTC.
-      const total = bh.coinbaseValueTotalSatoshis ?? 0;
-      const user  = bh.coinbaseValueUserSatoshis ?? 0;
-      if (total > 0) {
-        const pct = (user / total) * 100;
-        lines.push(`Payout: ${pct.toFixed(2)}% (${this.formatSats(user)})`);
-      } else {
-        lines.push('Payout: n/a (no coinbase data yet)');
-      }
-      if (!bh.verificationOk) {
-        lines.push('Your address was not found in the last coinbase.');
-      }
-      return lines.join('\n');
-    }
-
-    // Advanced mode (fee check etc.): keep honesty-style summary
-    const checks = bh.verificationCheckCount ?? 0;
-    const fails = bh.verificationFailCount ?? 0;
-    const honesty = this.getPoolHonestyPct(bh);
-    const honestyStr = honesty !== null ? honesty.toFixed(1) + '%' : 'n/a';
-    const fee = this.getBlockHeaderFee(bh);
-    const feeStr = fee >= 0 ? fee.toFixed(2) + '%' : 'unknown';
-
-    lines.push(`Honesty: ${honestyStr} (${checks - fails}/${checks} checks passed)`);
-    lines.push(`Current pool fee: ${feeStr}`);
-    if (!bh.verificationOk) {
-      lines.push(bh.coinbaseValueUserSatoshis === 0
-        ? 'Your address was not found in the last coinbase.'
-        : 'Pool fee exceeded configured limit.');
-    }
-    return lines.join('\n');
-  }
-
-  getBlockHeaderFee(bh: IDashboardV2BlockHeader): number {
-    if (bh.coinbaseValueTotalSatoshis) {
-      return (1 - (bh.coinbaseValueUserSatoshis ?? 0) / bh.coinbaseValueTotalSatoshis) * 100;
-    }
-    return -1;
-  }
-
-  formatDifficulty(diff: number | undefined): string {
-    if (!diff) return '-';
-    const suffixes = ['', 'K', 'M', 'G', 'T', 'P', 'E'];
-    let idx = 0;
-    let v = diff;
-    while (v >= 1000 && idx < suffixes.length - 1) {
-      v /= 1000;
-      idx++;
-    }
-    return v.toFixed(idx === 0 ? 0 : 2) + suffixes[idx];
-  }
-
-  formatSats(sats: number | undefined): string {
-    if (!sats) return '-';
-    return (sats / 100_000_000).toFixed(8) + ' BTC';
-  }
-
 }

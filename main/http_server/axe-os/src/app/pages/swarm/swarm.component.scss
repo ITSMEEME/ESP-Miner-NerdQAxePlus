@@ -339,11 +339,17 @@ nb-slider {
   .gauge {
     width: 75px !important;
   }
+  .gauge-value-container {
+    line-height: 1 !important;
+  }
   .gauge-value {
-    font-size: 14px !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
   }
   .gauge-unit {
-    font-size: 10px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    margin-top: 1px !important;
   }
   .gauge-label {
     display: none;
@@ -490,4 +496,14 @@ thead .sticky-col {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+@keyframes pulseThrottled {
+  0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+  70% { box-shadow: 0 0 0 6px rgba(255, 193, 7, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+}
+
+.badge-throttled {
+  animation: pulseThrottled 2s infinite;
 }

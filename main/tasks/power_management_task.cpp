@@ -75,6 +75,7 @@ void PowerManagementTask::checkCoreVoltageChanged()
         ESP_LOGI(TAG, "setting new vcore voltage to %umV", core_voltage);
         m_board->setVoltage((float) core_voltage / 1000.0);
         last_core_voltage = core_voltage;
+        m_active_voltage = core_voltage;
     }
 }
 
@@ -94,7 +95,6 @@ void PowerManagementTask::checkAsicFrequencyChanged()
         } else {
             ESP_LOGE(TAG, "failed to set asic frequency to %uMHz (pll setting not found or driver error)", asic_frequency);
             last_asic_frequency = asic_frequency;
-            m_active_frequency = asic_frequency;
             m_throttle_ceiling = 0;
         }
     }
@@ -319,6 +319,11 @@ void PowerManagementTask::task()
                     ESP_LOGI(TAG, "auto-throttle disabled, restoring base frequency %uMHz", base_freq);
                     if (m_board->setAsicFrequency((float) base_freq)) {
                         m_active_frequency = base_freq;
+                        // Restore base voltage when throttle is disabled
+                        uint16_t base_voltage = Config::getAsicVoltage(1200);
+                        m_board->setVoltage((float) base_voltage / 1000.0);
+                        m_active_voltage = base_voltage;
+                        ESP_LOGI(TAG, "auto-throttle disabled, restoring base voltage %umV", base_voltage);
                     } else {
                         ESP_LOGE(TAG, "failed to restore base frequency %uMHz", base_freq);
                     }
@@ -331,9 +336,13 @@ void PowerManagementTask::task()
                     : base_freq;
 
                 uint64_t cooldown_us = 90000000ULL; // 90 seconds
-                if ((current_time - m_last_throttle_change) >= cooldown_us) {
+                if (m_last_throttle_change == 0 || (current_time - m_last_throttle_change) >= cooldown_us) {
                     if (m_chipTempMax > throttle_temp) {
                         if (m_active_frequency > 500) {
+                            // Initialize active voltage on first use (safety: if checkCoreVoltageChanged hasn't run yet)
+                            if (m_active_voltage == 0) {
+                                m_active_voltage = Config::getAsicVoltage(1200);
+                            }
                             // snapshot ceiling on first throttle-down
                             if (m_throttle_ceiling == 0) {
                                 m_throttle_ceiling = base_freq;
@@ -341,9 +350,17 @@ void PowerManagementTask::task()
                             }
                             uint16_t next_freq = m_active_frequency - 5;
                             if (next_freq < 500) next_freq = 500;
-                            ESP_LOGW(TAG, "Thermal throttle active! Temp: %.2f°C limit: %u°C. Lowering freq to %uMHz (ceiling: %uMHz)", m_chipTempMax, throttle_temp, next_freq, m_throttle_ceiling);
+
+                            uint16_t base_voltage = Config::getAsicVoltage(1200);
+                            uint16_t next_volt = m_active_voltage >= 1010 ? m_active_voltage - 10 : 1000;
+                            if (next_volt > base_voltage) next_volt = base_voltage;
+                            if (next_volt > 1200) next_volt = 1200;
+
+                            ESP_LOGW(TAG, "Thermal throttle active! Temp: %.2f°C limit: %u°C. Lowering freq to %uMHz (ceiling: %uMHz), volt to %umV", m_chipTempMax, throttle_temp, next_freq, m_throttle_ceiling, next_volt);
                             if (m_board->setAsicFrequency((float) next_freq)) {
+                                m_board->setVoltage((float) next_volt / 1000.0);
                                 m_active_frequency = next_freq;
+                                m_active_voltage = next_volt;
                                 m_last_throttle_change = current_time;
                             } else {
                                 ESP_LOGE(TAG, "failed to apply thermal throttle frequency step to %uMHz", next_freq);
@@ -352,14 +369,24 @@ void PowerManagementTask::task()
                     } else if (m_chipTempMax < (throttle_temp - 5) && m_active_frequency < effective_ceiling) {
                         uint16_t next_freq = m_active_frequency + 5;
                         if (next_freq > effective_ceiling) next_freq = effective_ceiling;
-                        ESP_LOGI(TAG, "Cooling down. Temp: %.2f°C limit: %u°C. Raising freq to %uMHz (ceiling: %uMHz)", m_chipTempMax, throttle_temp - 5, next_freq, m_throttle_ceiling);
+
+                        uint16_t base_voltage = Config::getAsicVoltage(1200);
+                        uint16_t next_volt = m_active_voltage + 10;
+                        if (next_volt > base_voltage) next_volt = base_voltage;
+                        if (next_volt > 1200 && next_freq < effective_ceiling) next_volt = 1200;
+
+                        ESP_LOGI(TAG, "Cooling down. Temp: %.2f°C limit: %u°C. Raising freq to %uMHz (ceiling: %uMHz), volt to %umV", m_chipTempMax, throttle_temp - 5, next_freq, m_throttle_ceiling, next_volt);
                         if (m_board->setAsicFrequency((float) next_freq)) {
+                            m_board->setVoltage((float) next_volt / 1000.0);
                             m_active_frequency = next_freq;
+                            m_active_voltage = next_volt;
                             m_last_throttle_change = current_time;
                             // reset ceiling when fully recovered
                             if (m_active_frequency >= effective_ceiling) {
                                 ESP_LOGI(TAG, "Throttle fully recovered, ceiling released");
                                 m_throttle_ceiling = 0;
+                                m_board->setVoltage((float) base_voltage / 1000.0);
+                                m_active_voltage = base_voltage;
                             }
                         } else {
                             ESP_LOGE(TAG, "failed to apply frequency ramp-up step to %uMHz", next_freq);
@@ -371,6 +398,25 @@ void PowerManagementTask::task()
                             m_last_throttle_change = current_time;
                         } else {
                             ESP_LOGE(TAG, "failed to restore frequency to effective ceiling %uMHz", effective_ceiling);
+                        }
+                    } else if (m_active_frequency < effective_ceiling && (current_time - m_last_throttle_change) >= 120000000ULL) {
+                        // Stabilize Hash Rate Check
+                        float real_ghs = HASHRATE_MONITOR.getHashrate();
+                        uint16_t small_cores = m_board->getAsics() ? m_board->getAsics()->getSmallCoreCount() : 0;
+                        float expected_ghs = ((float) m_active_frequency * m_board->getAsicCount() * small_cores) / 1000.0f;
+                        
+                        if (expected_ghs > 0 && real_ghs < expected_ghs * 0.95f) {
+                            uint16_t base_voltage = Config::getAsicVoltage(1200);
+                            uint16_t next_volt = m_active_voltage + 5;
+                            if (next_volt > base_voltage) next_volt = base_voltage;
+                            if (next_volt > 1200) next_volt = 1200;
+
+                            if (next_volt > m_active_voltage) {
+                                ESP_LOGW(TAG, "Hashrate too low (%.2f < %.2f GH/s). Raising voltage to %umV to stabilize", real_ghs, expected_ghs, next_volt);
+                                m_board->setVoltage((float) next_volt / 1000.0);
+                                m_active_voltage = next_volt;
+                                m_last_throttle_change = current_time; // Reset timer so we don't spam
+                            }
                         }
                     }
                 }
@@ -414,6 +460,11 @@ void PowerManagementTask::task()
 uint16_t PowerManagementTask::getActiveFrequency()
 {
     return m_active_frequency;
+}
+
+uint16_t PowerManagementTask::getActiveVoltage()
+{
+    return m_active_voltage;
 }
 
 bool PowerManagementTask::isThrottled()

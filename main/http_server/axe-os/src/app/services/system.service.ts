@@ -168,7 +168,7 @@ export class SystemService {
       stratum:     { poolMode: 0, activePoolMode: 0, usingFallback: false, totalBestDiff: 0, poolBalance: 0, pools: [{ host: '', port: 0, user: '', connected: false, activeProtocol: 0, encrypted: false, accepted: 0, rejected: 0, bestDiff: 0, pingRtt: 0, pingLoss: 0, poolDifficulty: 0 }] },
       can:         { hasExtension: false, enabled: false },
       coinbase:    { blockHeaders: [], pools: [] },
-      history:     { hashrate_1m: [], hashrate_10m: [], hashrate_1h: [], hashrate_1d: [], vregTemp: [], asicTemp: [], hasMore: false, timestamps: [], timestampBase: 0 },
+      history:     { hashrate_1m: [], hashrate_10m: [], hashrate_1h: [], hashrate_1d: [], vregTemp: [], asicTemp: [], fanSpeed: [], hasMore: false, timestamps: [], timestampBase: 0 },
     };
   }
 

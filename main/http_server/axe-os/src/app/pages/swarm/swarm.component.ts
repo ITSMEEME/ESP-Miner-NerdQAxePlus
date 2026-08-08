@@ -188,7 +188,8 @@ export class SwarmComponent implements OnInit, OnDestroy {
                 supportsAsicApi,
                 offline: false,
               };
-              merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
+              const actualFreq = merged.activeFrequency || merged.frequency;
+              merged["expectedHashRate"] = Math.floor(actualFreq * ((merged.smallCoreCount * merged.asicCount) / 1000));
               merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
               merged["bestSessionDiff"] = this.convertBestDiffToNumber(merged["bestSessionDiff"]);
 
@@ -247,7 +248,8 @@ export class SwarmComponent implements OnInit, OnDestroy {
           supportsAsicApi,
           offline: false,
         };
-        merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
+        const actualFreq = merged.activeFrequency || merged.frequency;
+        merged["expectedHashRate"] = Math.floor(actualFreq * ((merged.smallCoreCount * merged.asicCount) / 1000));
         if (!merged['swarmColor']) merged['swarmColor'] = 'blue';
 
         merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
@@ -328,7 +330,8 @@ export class SwarmComponent implements OnInit, OnDestroy {
               supportsAsicApi,
               offline: false,
             };
-            merged["expectedHashRate"] = Math.floor(merged.frequency * ((merged.smallCoreCount * merged.asicCount) / 1000));
+            const actualFreq = merged.activeFrequency || merged.frequency;
+            merged["expectedHashRate"] = Math.floor(actualFreq * ((merged.smallCoreCount * merged.asicCount) / 1000));
             if (!merged['swarmColor']) merged['swarmColor'] = existingDevice?.swarmColor ?? 'blue';
             merged["bestDiff"] = this.convertBestDiffToNumber(merged["bestDiff"]);
             merged["bestSessionDiff"] = this.convertBestDiffToNumber(merged["bestSessionDiff"]);

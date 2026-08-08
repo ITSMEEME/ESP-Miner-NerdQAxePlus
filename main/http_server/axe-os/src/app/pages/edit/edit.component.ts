@@ -450,6 +450,8 @@ export class EditComponent implements OnInit {
       fans,
       invertFanPolarity: !!f.invertFanPolarity,
       pidUseMax: !!f.pidUseMax,
+      autoThrottle: !!f.autoThrottle,
+      throttleTemp: f.throttleTemp,
       // Mempool
       mempoolCustom: !!f.customMempoolEnabled,
       mempoolUrl: f.customMempoolEnabled ? f.mempoolUrl : '',

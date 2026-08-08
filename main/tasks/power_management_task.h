@@ -38,6 +38,7 @@ class PowerManagementTask {
     uint64_t m_last_throttle_change = 0;
     uint16_t m_active_frequency = 0;
     uint16_t m_throttle_ceiling = 0;  // hard cap: max freq during throttle recovery
+    uint16_t m_active_voltage = 0;
 
     void checkCoreVoltageChanged();
     void checkAsicFrequencyChanged();
@@ -94,6 +95,7 @@ class PowerManagementTask {
     };
 
     uint16_t getActiveFrequency();
+    uint16_t getActiveVoltage();
     bool isThrottled();
 
     FanController& getFanController()

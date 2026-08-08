@@ -148,6 +148,8 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
 #if defined(NERDAXE) || defined(NERDAXEGAMMA)
     doc["pidUseMax"]         = Config::isFanPidUseMax();
 #endif
+    doc["autoThrottle"]      = Config::isAutoThrottleEnabled();
+    doc["throttleTemp"]      = Config::getThrottleTemp();
 
     // --- network ---
     {
@@ -261,6 +263,12 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
         Config::setFanPidUseMax(doc["pidUseMax"].as<bool>());
     }
 #endif
+    if (!doc["autoThrottle"].isNull()) {
+        Config::setAutoThrottleEnabled(doc["autoThrottle"].as<bool>() || doc["autoThrottle"].as<int>() != 0);
+    }
+    if (doc["throttleTemp"].is<uint16_t>()) {
+        Config::setThrottleTemp(doc["throttleTemp"].as<uint16_t>());
+    }
 
     // --- misc ---
     if (doc["stratumKeep"].is<bool>() || doc["stratumKeep"].is<int>()) {
